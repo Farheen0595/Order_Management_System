@@ -63,7 +63,7 @@ class InventoryAudit(Base):
     quantity_available = Column(Integer, nullable=False)
     changeType = Column(String(20), nullable=False)
     quantityChanged = Column(Integer, nullable=False)
-    audittime = Column(TIMESTAMP, server_default=func.current_timestamp())
+    auittime = Column(TIMESTAMP, server_default=func.current_timestamp())
     remarks = Column(String(50))
     inventory = relationship("Inventory", back_populates="audits")
 

@@ -1,6 +1,8 @@
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field
 from typing import Optional,Annotated,Type
+from sqlalchemy import text
+import json
 
 from app.database.models import (Inventory ,
                                  InventoryAudit,
@@ -8,133 +10,184 @@ from app.database.models import (Inventory ,
                                  OrderAudit)
 
 from app.database.engine import AsyncSessionLocal
-from app.services.inventory_service import product_exists,update_inventory
-from app.services.order_service import create_order
-from app.services.audit_service import order_audit
-from app.services.email_service import send_email
 
-from app.schemas.order import (ProductCheckInput,
+from app.schemas.order import (
                                CreateOrderInput,
                                OrderAuditInput,
                                InventoryUpdateInput,
-                               EmailInput)
+                               EmailInput) 
 
 
-class CheckProductExistsTool(BaseTool):
 
-    name:str = "check_product_existence"
-    description:str = "Check if a product exists in inventory by name"
-    args_schema: Type[BaseModel] = ProductCheckInput
-    return_direct:bool = True
-    
-    async def _arun(self, product_name: str):
-        
-        async with AsyncSessionLocal() as db:
-
-            records,flag = await product_exists(db ,product_name)
-
-            if flag:
-                return f'The product {product_name} exits'
-            else:
-                return f'The product {product_name} is not available'
-        
-    def _run(self, *args, **kwargs):
-        raise NotImplementedError("Sync model not supported")
-    
-
+# ----------------------------
+#  Order Table Create Tool
+# ----------------------------
 
 class CreateOrderTool(BaseTool):
-
-    name: str = "create _order"
-    description: str = "Create a new order in the Order Table"
+    name: str = "create_order"
+    description: str = "Create a new order in the Orders table"
     args_schema: Type[BaseModel] = CreateOrderInput
     return_direct: bool = True
 
-    async def _arun(self, product_id: int,
-                    quantity: int,
-                    remarks: str = "Ordered"):
+    async def _arun(self, product_id: int, quantity: int, status: str, remarks: str = "Ordered"):
+
+        """
+        Create a new order for the new parameters.
+        """
 
         async with AsyncSessionLocal() as db:
+            async with db.begin():  
+               
+                order = Order(
+                    product_id=product_id,
+                    quantity=quantity,
+                    status=status,
+                    remarks=remarks
+                )
 
-            async with db.begin():
+                db.add(order)         
+                await db.flush()      
+                await db.refresh(order)  
 
-                order = await create_order(db, product_id,quantity,remarks)
-
-                return {"order_id":order.order_id,
-                        "status":order.status,
-                        "remarks":order.remarks,
-                        "orderDate":str(order.orderDate)}
             
-
-    def _run(self, *args, **kwargs):
-        return NotImplementedError("Sync not supported")
+                output = {
+                    "order_id": order.order_id,
+                    "product_id": order.product_id,
+                    "quantity": order.quantity,
+                    "status": order.status,
+                    "remarks": order.remarks}
+                
+                return json.dumps(output)
     
+    def _run(self, *args, **kwargs):
+        raise NotImplementedError("Sync execution not supported, use _arun.")
 
+
+
+
+# ----------------------------
+# Order Audit Tool
+# ----------------------------
 
 class OrderAuditTool(BaseTool):
-
-    name:str = "order_audit"
-    description:str  = "Log an audit entry for an order"
+    name: str = "order_audit"
+    description: str = "Log an audit entry for an order"
     args_schema: Type[BaseModel] = OrderAuditInput
+    return_direct: bool = True
 
-    async def _arun(self, order_id: int,
-                    prev: str, 
-                    new: str, 
-                    remarks: str):
-        
+    async def _arun(self, order_id: int, prev_status: str, new_status: str, remarks: str = "Order placed"):
         async with AsyncSessionLocal() as db:
-
             async with db.begin():
+                
 
-                await order_audit(db, order_id, prev, new, remarks)
+                orderAudit = OrderAudit(order_id=order_id, 
+                                        previousStatus=prev_status, 
+                                        newStatus=new_status,
+                                        remarks=remarks)
 
-                return f"Audit logged for order {order_id}"
-            
+                db.add(orderAudit)
+                await db.flush()      
+                await db.refresh(orderAudit) 
+
+                output = {
+                        "order_id":orderAudit.order_id,
+                        "prev_status":orderAudit.previousStatus,
+                        "new_status":orderAudit.newStatus,
+                        "remarks":orderAudit.remarks}
+                
+                return json.dumps(output)
+    
+
     def _run(self, *args, **kwargs):
-        
-        return NotImplementedError("Sync not supported")
+        raise NotImplementedError("Sync not supported")
 
 
 
-
+# ----------------------------
+# Inventory Update Tool
+# ----------------------------
 class InventoryUpdateTool(BaseTool):
-
-    name:str = "update_inventory"
-    description:str = """Deduct or Update from inventory table and update it in quantity available  \
-                        and original quantity and removed or added will be updated"""
+    name: str = "update_inventory"
+    description: str = "Deduct or update inventory and log audit"
     args_schema: Type[BaseModel] = InventoryUpdateInput
+    return_direct: bool = True
 
-    async def _arun(self, 
-                    product_id: int,
-                    quantity: int, 
-                    changeType: str,
-                    remarks: str):
-        
+    async def _arun(self, product_id: int, changeType:str, quantityChanged:int, remarks: str = "Inventory deduction"):
         async with AsyncSessionLocal() as db:
-
             async with db.begin():
 
-                inv = await update_inventory(db, product_id, quantity, changeType, remarks)
+                inv = await db.get(Inventory,product_id)
 
-                return f"Inventory updated for product {product_id}, remaining {inv.quantity_available}"
-            
-    def _run(self, *args, **kwargs): 
+                if not inv:
+                    raise ValueError("Product not found")
+                
+                quantity_available = inv.quantity_available
 
-        return NotImplementedError("Sync not supported")
+                if changeType.upper() == "REMOVE":
+
+                    if inv.quantity_available < quantityChanged:
+
+                        raise ValueError("Insufficient Stock")
+                    else:
+                        
+                        inv.quantity_available -= quantityChanged
+
+           
+
+                else:
+                    raise ValueError(f"Invalid changeType: {changeType}")
+                
+                
+                inventoryAudit = InventoryAudit(product_id=product_id,
+                                                quantity_available=quantity_available,
+                                                changeType=changeType,
+                                                quantityChanged=quantityChanged,
+                                                remarks=remarks)
 
 
+
+                db.add(inventoryAudit)
+                await db.flush()    
+                await db.refresh(inv)   
+                await db.refresh(inventoryAudit) 
+                await db.commit()
+
+                output = {
+                        "product_id":inventoryAudit.product_id,
+                        "quantity_available":inventoryAudit.quantity_available,
+                        "changeType":inventoryAudit.changeType,
+                        "quantityChanged":inventoryAudit.quantityChanged,
+                        "remarks":inventoryAudit.remarks}
+                
+
+                return json.dumps(output)
+    
+    def _run(self, *args, **kwargs):
+        raise NotImplementedError("Sync not supported")
+
+
+# ----------------------------
+# Send Email Tool
+# ----------------------------
 
 class SendConfirmationEmailTool(BaseTool):
+    name: str = "send_email"
+    description: str = "Send order confirmation email to customer"
+    args_schema: Type[BaseModel] = EmailInput
+    return_direct: bool = True
 
-    name:str = "send_email"
-    description:str = "Send order confirmation email"
-    args_schema:str = EmailInput
+    async def _arun(self, 
+                    to: str, 
+                    subject: str, 
+                    body: str):
+        
 
-    async def _arun(self, to: str, subject: str, body: str):
+        print(f"Sending email to {to}: {subject}\n{body}")
 
-        return await send_email(to, subject, body)
-    
-    def _run(self, *args, **kwargs): 
+        output = {"success": True, "message": f"Email sent to {to}"}
+        return json.dumps(output)
+
+    def _run(self, *args, **kwargs):
         raise NotImplementedError("Sync not supported")
 
 

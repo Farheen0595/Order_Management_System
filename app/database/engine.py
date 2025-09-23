@@ -1,10 +1,6 @@
-from app.config.settings import settings  # Import your project-specific configuration/settings (e.g., DB URL, credentials)
-
-from sqlalchemy.ext.asyncio import create_async_engine  # Function to create an async SQLAlchemy engine for database connections
-from sqlalchemy.ext.asyncio import async_sessionmaker    # Factory to create async sessions for interacting with the DB
-from sqlalchemy.ext.asyncio import AsyncEngine          # Type hint / class representing an async SQLAlchemy engine
-
-from sqlalchemy.orm import DeclarativeBase  # Base class for SQLAlchemy ORM models (used for defining tables and metadata)
+from app.config.settings import settings  
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncEngine      
+from sqlalchemy.orm import DeclarativeBase  
 
 
 class Base(DeclarativeBase):
