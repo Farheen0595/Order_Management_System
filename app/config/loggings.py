@@ -50,4 +50,4 @@ def setup_logging(
         f"Logging initialized. Level={logging.getLevelName(level)}, File={log_path_file}"
     )
 
-setup_logging(level=logging.INFO)
+# setup_logging(level=logging.INFO)

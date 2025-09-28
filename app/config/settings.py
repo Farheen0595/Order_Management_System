@@ -30,11 +30,15 @@ class Settings(BaseSettings):
     # GEMINI MODEL
     DEFAULT_MODEL: str
 
-
+    # EMBEDDING MODEL
+    DEFAULT_EMBEDDING_MODEL: str
     # EMAIL API KEY
     EMAIL_API_KEY:str
  
 
+    # DEFAULT TOP K CHUNKS
+    DEFAULT_TOP_K: int
+    
     # MYSQL CREDENTIALS
     DB_HOSTNAME: str
     DB_PORT: int
@@ -57,6 +61,10 @@ class Settings(BaseSettings):
     # LOG DIR & FILE NAME
     LOG_DIRECTORY: str  = "logs"
     LOG_FILE_NAME: str = "app.log"
+
+
+    # AGENT URL 
+    MASTER_AGENT_URL: str
 
 
 settings =  Settings()

@@ -63,12 +63,12 @@ class InventoryAudit(Base):
     quantity_available = Column(Integer, nullable=False)
     changeType = Column(String(20), nullable=False)
     quantityChanged = Column(Integer, nullable=False)
-    auittime = Column(TIMESTAMP, server_default=func.current_timestamp())
+    audittime = Column(TIMESTAMP, server_default=func.current_timestamp())
     remarks = Column(String(50))
     inventory = relationship("Inventory", back_populates="audits")
 
 
-class Order(Base):
+class Orders(Base):
     """
     Represents a customer order placed for products.
 
@@ -82,7 +82,7 @@ class Order(Base):
         orderDate (datetime): Timestamp of when the order was created.
         audits (list[OrderAudit]): Relationship to order audit logs.
     """
-    __tablename__ = "Order"
+    __tablename__ = "Orders"
 
     order_id = Column(Integer, primary_key=True, autoincrement=True)
     product_id = Column(Integer, ForeignKey("Inventory.product_id"), nullable=False)
@@ -109,10 +109,10 @@ class OrderAudit(Base):
     __tablename__ = "OrderAudit"
 
     audit_id = Column(Integer, primary_key=True, autoincrement=True)
-    order_id = Column(Integer, ForeignKey("Order.order_id"), nullable=False)
+    order_id = Column(Integer, ForeignKey("Orders.order_id"), nullable=False)
     previousStatus = Column(String(20), nullable=False)
     newStatus = Column(String(20), nullable=False)
     audittime = Column(TIMESTAMP, server_default=func.current_timestamp())
     remarks = Column(Text)
 
-    order = relationship("Order", back_populates="audits")
+    order = relationship("Orders", back_populates="audits")

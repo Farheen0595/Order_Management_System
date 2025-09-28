@@ -35,7 +35,7 @@ engine: AsyncEngine = create_async_engine(
     pool_size=settings.DB_POOL_SIZE,
     max_overflow=settings.DB_POOL_OVERFLOW,
     pool_pre_ping=True,
-    echo=True
+    echo=False
 )
 
 

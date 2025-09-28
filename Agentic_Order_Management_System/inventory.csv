@@ -1,0 +1,11 @@
+product_id,sku,product_name,category,brand,description,quantity_available,reorder_level,price,currency,warehouse_location,status
+1,ELEC-1001,"Smart LED TV 55""",Electronics,Samsung,4K UHD Smart TV with Wi-Fi,25,5,599.99,USD,WH-A1,active
+2,ELEC-1002,Wireless Bluetooth Headphones,Electronics,Sony,Noise-cancelling over-ear headphones,40,10,199.99,USD,WH-A2,active
+3,ELEC-1003,Smartphone X15,Electronics,Apple,"128GB storage, 5G, OLED display",15,3,999.0,USD,WH-B1,active
+4,HOME-2001,Air Purifier Pro,Home Appliances,Dyson,Smart air purifier with HEPA filter,12,2,499.5,USD,WH-C1,active
+5,HOME-2002,Robot Vacuum Cleaner,Home Appliances,iRobot,Wi-Fi connected vacuum with auto docking,18,5,349.0,USD,WH-C2,active
+6,COMP-3001,Gaming Laptop G15,Computers,Dell,"RTX 3060, 16GB RAM, 512GB SSD",8,2,1299.99,USD,WH-D1,active
+7,COMP-3002,Mechanical Keyboard RGB,Computers,Logitech,Backlit mechanical gaming keyboard,30,6,129.99,USD,WH-D2,active
+8,CLOT-4001,Men's Running Shoes,Clothing,Nike,Lightweight breathable running shoes,50,10,89.99,USD,WH-E1,active
+9,CLOT-4002,Women's Jacket WinterPro,Clothing,North Face,Waterproof insulated jacket,20,4,179.0,USD,WH-E2,active
+10,BOOK-5001,Data Science Handbook,Books,O'Reilly,Comprehensive guide to modern data science,60,15,59.99,USD,WH-F1,active
