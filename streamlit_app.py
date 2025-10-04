@@ -3,19 +3,15 @@ from app.utils.streamlit_functions import initialize_sessions, handle_master_age
 import asyncio
 
 
-
-
 # ----------------- PAGE CONFIG -----------------
 st.set_page_config(page_title="Agentic Order Management System", layout="wide")
 
-st.title("🤖 Master Order Agent")
-
+st.title("Order Management Agent")
 
 
 # Initialize sessions
-initialize_sessions()
-
-
+session_id = initialize_sessions()
+st.write(f"Current Session ID: {session_id}")
 
 
 # Show history

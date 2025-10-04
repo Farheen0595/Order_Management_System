@@ -4,7 +4,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.database.engine import engine
 
 
-EXPECTED_TABLES = ["Inventory", "InventoryAudit", "Order", "OrderAudit"]
+EXPECTED_TABLES = ["Inventory", "InventoryAudit", "Orders", "OrderAudit", \
+                   "ShoppingCart","UserSessions"]
 
 
 async def main():

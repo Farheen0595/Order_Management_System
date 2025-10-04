@@ -2,52 +2,105 @@ import asyncio
 import json
 from app.tools.order_placement_tools import OrderPlacementTool
 from app.database.engine import engine
-
-async def run_tests():
-
-    tool = OrderPlacementTool()
-
-    try:
-        print("\n=== TEST 1: Successful Order ===")
-
-        try:
-            result_json = await tool._arun(
-                product_id=1,           
-                quantity=-2,
-                customer_email="student@university.edu",
-                remarks="Test order" )
-            
-            result = json.loads(result_json)
-            print("Result:", json.dumps(result, indent=2))
-
-            # Basic checks
-            assert result["order"]["product_id"] == 1
-            assert result["order"]["quantity"] == 2
-            assert result["order"]["status"] == "processed"
-
-            assert result["audit"]["prev_status"] == "processed"
-            assert result["audit"]["new_status"] == "shipped"
-
-            assert result["inventory"]["quantityChanged"] == 2
-            assert result["inventory"]["changeType"] == "REMOVE"
-            assert result["email"]["to"] == "student@university.edu"
-            
-            print("TEST 1 PASSED")
-        except Exception as e:
-            print("TEST 1 FAILED:", e)
+from app.tools.cart_tool import CartTool
 
 
-    finally:
-        # Dispose engine once at the very end
 
-        await engine.dispose()
-        print("\nDatabase engine disposed.")
+# Use same session as in your earlier test
+TEST_SESSION_ID = "d79c4c55-8037-486f-a996-e7c234ed1d03"
+TEST_SKU = "ELEC-1003"  # Smartphone X15 (Apple)
+CUSTOMER_EMAIL = "testuser@example.com"
 
 
+async def run_test():
+    cart_tool = CartTool()
+    order_tool = OrderPlacementTool()
+
+    print("\n--- ADD ITEM TO CART ---")
+    result_add = await cart_tool._arun(
+        session_id=TEST_SESSION_ID,
+        action="add",
+        sku=TEST_SKU,
+        quantity=2
+    )
+    print(result_add)
+
+    print("\n--- VIEW CART BEFORE ORDER ---")
+    result_view = await cart_tool._arun(
+        session_id=TEST_SESSION_ID,
+        action="view"
+    )
+    print(result_view)
+
+    print("\n--- PLACE ORDER ---")
+    result_order = await order_tool._arun(
+        session_id=TEST_SESSION_ID,
+        customer_email=CUSTOMER_EMAIL,
+        customer_name="Test User",
+        remarks="Testing order placement"
+    )
+    print(result_order)
+
+    print("\n--- VIEW CART AFTER ORDER ---")
+    result_view_after = await cart_tool._arun(
+        session_id=TEST_SESSION_ID,
+        action="view"
+    )
+    print(result_view_after)
 
 
 if __name__ == "__main__":
-    asyncio.run(run_tests())
+    asyncio.run(run_test())
+
+
+
+
+
+# async def run_tests():
+
+#     tool = OrderPlacementTool()
+
+#     try:
+#         print("\n=== TEST 1: Successful Order ===")
+
+#         try:
+#             result_json = await tool._arun(
+#                 product_id=1,           
+#                 quantity=-2,
+#                 customer_email="student@university.edu",
+#                 remarks="Test order" )
+            
+#             result = json.loads(result_json)
+#             print("Result:", json.dumps(result, indent=2))
+
+#             # Basic checks
+#             assert result["order"]["product_id"] == 1
+#             assert result["order"]["quantity"] == 2
+#             assert result["order"]["status"] == "processed"
+
+#             assert result["audit"]["prev_status"] == "processed"
+#             assert result["audit"]["new_status"] == "shipped"
+
+#             assert result["inventory"]["quantityChanged"] == 2
+#             assert result["inventory"]["changeType"] == "REMOVE"
+#             assert result["email"]["to"] == "student@university.edu"
+            
+#             print("TEST 1 PASSED")
+#         except Exception as e:
+#             print("TEST 1 FAILED:", e)
+
+
+#     finally:
+#         # Dispose engine once at the very end
+
+#         await engine.dispose()
+#         print("\nDatabase engine disposed.")
+
+
+
+
+# if __name__ == "__main__":
+#     asyncio.run(run_tests())
 
 
         # print("\n=== TEST 2: Product Not Found ===")

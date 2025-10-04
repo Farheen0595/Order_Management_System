@@ -1,10 +1,11 @@
 # corrected_schemas.py
 from pydantic import BaseModel, Field, EmailStr
+from typing import Optional
 
 
 
 
-class OrderCancellationtInput(BaseModel):
+class OrderCancellationInput(BaseModel):
 
     """
     Schema for cancellatoion of the orders and logs the order and inventory and as well as inventory table and send the cancel confimration
@@ -16,11 +17,42 @@ class OrderCancellationtInput(BaseModel):
         reason: Customer Cancelled Order Reason
     """
 
-    order_id: int = Field(..., description="Unique Numeric ID for the order from the Orders Table",gt=0)
+    action: str = Field(..., pattern="^cancel_order$", description="Must be 'cancel_order'")
+    order_number: str = Field(..., description="Order NUmber to cancel the order")
+    reason: Optional[str] = Field(None, description="Optional reason for cancellation")
 
-    reason: str = Field(default="Customer Cancelled the Order", description="Reason for the Cancellation")
 
-    email_address: EmailStr = Field(default="ai_agent05@gmail.com",description="Email of the customer for the order cancellation sent")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

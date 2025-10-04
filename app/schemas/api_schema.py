@@ -8,8 +8,7 @@ class AgentRequest(BaseModel):
  
     user_input: str
     session_id: str
-
-
+    
 
 class AgentResponse(BaseModel):
 

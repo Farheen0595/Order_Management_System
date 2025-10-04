@@ -1,110 +1,41 @@
-from app.tools.order_cancellation_tools import OrderCancellationTool
+# tests/test_order_cancellation_tool.py
+
 import asyncio
-from app.database.engine import engine
-import json
+from app.tools.order_cancellation_tools import OrderCancellationTool
 
 
-
-
-async def run_test():
-
+async def run_tests():
     tool = OrderCancellationTool()
 
-    # Run cancellation for order_id=2
+    # ---- Test 1 ----
+    print("\n--- Test 1: Cancel non-existent order ---")
     result = await tool._arun(
-        order_id=23
+        action="cancel_order",
+        order_number="ORD-NOTEXIST",  # guaranteed not to exist
+        reason="Testing invalid order"
     )
+    print("Result:", result)
 
-    data = json.loads(result)
-    await engine.dispose()
-    print("✅ Test Passed: Order cancelled successfully")
-    print("Response:", data)
+    # ---- Test 2 ----
+    print("\n--- Test 2: Cancel valid single-row order ---")
+    # Use an actual order_number from your DB that has only one row (e.g. BOOK-5001)
+    result = await tool._arun(
+        action="cancel_order",
+        order_number="ORD-1289BDBD",  # replace with your real single-row order_number
+        reason="Customer requested cancellation"
+    )
+    print("Result:", result)
+
+    # ---- Test 3 ----
+    print("\n--- Test 3: Cancel valid multi-row order ---")
+    # Use an order_number that exists with multiple rows (e.g. COMP-3001 + ELEC-1002 same order_number)
+    result = await tool._arun(
+        action="cancel_order",
+        order_number="ORD-1289BDBD",  # replace with your real multi-row order_number
+        reason="Customer cancelled full order"
+    )
+    print("Result:", result)
 
 
 if __name__ == "__main__":
-    asyncio.run(run_test())
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# ------------------------------------------------
-# TEST ARGS SCHEMA TO FETCH THE DEFAULT PARAMETERS
-# -----------------------------------------------
-
-# async def test_args_schema():
-
-
-#     tool = OrderCancellationTool()
-
-
-#     args = await tool._arun(order_id=2)
-
-#     await engine.dispose()
-
-
-#     return args
-
-
-
-# if __name__ == "__main__":
-
-
-#     arguments = asyncio.run(test_args_schema())
-#     print(arguments)
-
-
-
-
-# ----------------------
-# TESTING THE PARAMTERS
-# -----------------------
-
-
-# async def test_paramters():
-
-#     tool = OrderCancellationTool()
-
-   
-#     try:
-#         result = await tool._arun(
-#                 order_id=2)
-        
-#         print(type(result))
-#         print("ORDER ID",result.order_id)
-#         # Basic checks
-#         assert result.order_id == 2
-        
-#     except Exception as e:
-#         print(f"Invalid parameters - str{e}")
-
-#     finally:
-#         await engine.dispose()
-#         print("\nDatabase engine disposed.")
-
-
-
-
-# if __name__ == "__main__":
-#     asyncio.run(test_paramters())
-
+    asyncio.run(run_tests())

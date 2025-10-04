@@ -1,10 +1,25 @@
 import streamlit as st
+import requests
 import uuid
 import httpx
 from app.config.settings import settings
+from app.config.loggings import setup_logging
+import logging
+import asyncio
+from sqlalchemy import text
+from app.database.engine import AsyncSessionLocal
+from app.database.models import UserSessions
+from streamlit_cookies_manager import EncryptedCookieManager
+
+
+setup_logging(level=logging.INFO)
+logger = logging.getLogger(__file__)
+
 
 # ------------ PARAMETERS -------------------------
 MASTER_AGENT_URL = settings.MASTER_AGENT_URL
+SESSION_ID_URL = settings.SESSION_ID_URL
+COOKIE_PASSWORD = settings.COOKIE_SECRET
 
 
 # ---------------------- Session Initialization ----------------------
@@ -12,13 +27,43 @@ def initialize_sessions():
 
     """
     Initialize Streamlit session state variables.
+    - Creates or restores session_id.
+    - Persists session_id in URL query params so it survives refresh.
+
     """
 
-    if "session_id" not in st.session_state:
-        st.session_state.session_id = str(uuid.uuid4())
+
+    # Setup cookies
+    cookies = EncryptedCookieManager(prefix="oms_", password=COOKIE_PASSWORD)
+
+    if not cookies.ready():
+        st.stop()
+
+
+    # --- Handle session_id ---
+    if "session_id" not in cookies:
+        resp = requests.get(SESSION_ID_URL)
+        if resp.status_code == 200:
+            new_session = resp.json()["session_id"]
+            cookies["session_id"] = new_session
+            cookies.save()  # persist in browser cookie
+            st.session_state["session_id"] = new_session
+            st.write(" New session started and saved in cookie.")
+        else:
+            st.error(f"Failed to start session: {resp.status_code} {resp.text}")
+
+    else:
+        # Restore from cookie
+        st.session_state["session_id"] = cookies["session_id"]
+        st.write(f"Restored session from cookie: {cookies['session_id']}")
+            
+
 
     if "messages" not in st.session_state:
         st.session_state.messages = []
+
+    
+    return st.session_state["session_id"]
 
 
 
@@ -54,7 +99,7 @@ async def handle_master_agent(user_query: str):
         )
 
         # Display + store
-        st.markdown(ans)
+        # st.markdown(ans)
         st.session_state["messages"].append({"role": "assistant", "content": ans})
 
         return ans

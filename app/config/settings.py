@@ -6,6 +6,8 @@ from pathlib import Path
 BASE_DIR = Path(__file__).parent.parent.parent
 ENV_PATH = f'{BASE_DIR}/.env'
 
+
+
 class Settings(BaseSettings):
 
 
@@ -32,10 +34,24 @@ class Settings(BaseSettings):
 
     # EMBEDDING MODEL
     DEFAULT_EMBEDDING_MODEL: str
-    # EMAIL API KEY
-    EMAIL_API_KEY:str
- 
 
+
+    # Documet_path
+    PDF_PATH: str
+
+    # CHUNCK SIZE AND CHUNK OVERLAPP
+
+    CHUNK_SIZE: int
+    CHUNCK_OVERLAP: int
+    # EMAIL API KEY
+
+    SENDGRID_API_KEY:str
+
+    # COLLECTION_NAME
+    COLLECTION_NAME:str 
+ 
+    # COOKIE
+    COOKIE_SECRET: str
     # DEFAULT TOP K CHUNKS
     DEFAULT_TOP_K: int
     
@@ -53,6 +69,9 @@ class Settings(BaseSettings):
     DB_INVENTORY_AUDIT: str
     DB_ORDER: str
     DB_ORDER_AUDIT: str
+    DB_USER_SESSIONS: str
+    DB_SHOPPING_CART: str
+    DB_Order_Items: str
 
     # VECTOR INDEX
     VECTOR_DATABASE_DIR: str
@@ -64,10 +83,12 @@ class Settings(BaseSettings):
 
 
     # AGENT URL 
+    SESSION_ID_URL: str
     MASTER_AGENT_URL: str
 
 
 settings =  Settings()
+
 
 def ensure_dirs_writable():
 
@@ -76,6 +97,7 @@ def ensure_dirs_writable():
         Creates the folder if missing and checks write permission
         by writing a small test file.
     """
+
     p = Path(settings.VECTOR_DATABASE_DIR).resolve()
     p.mkdir(parents=True, exist_ok=True)
 

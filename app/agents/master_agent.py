@@ -9,131 +9,109 @@ from app.config.settings import settings
 from app.agents.memory import get_by_session_id
 from app.agents.order_placement_agent import handle_order_placement
 from app.agents.order_cancellation_agent import handle_order_cancellation
+from app.agents.product_inquiry_agent import handle_product_inquiry
 
 
+import logging
+from app.config.loggings import setup_logging
 
-# Registry of sub-agent
+setup_logging(level=logging.DEBUG)
+logger = logging.getLogger(__file__)
+
 
 sub_agents = {
                 "OrderPlacementAgent": {"handler": handle_order_placement},
 
-                "OrderCancellationAgent" :{"handler": handle_order_cancellation } 
+                "OrderCancellationAgent" :{"handler": handle_order_cancellation} ,
+                "ProductInquiryAgent" :{"handler":handle_product_inquiry}
             }
                     
-
 
 # LLM 
 llm = ChatGoogleGenerativeAI( model=settings.DEFAULT_MODEL, api_key=settings.GEMINI_API_KEY,
                                 max_tokens=2000,
                                 temperature=0,
-                                request_timeout=60,  
-                            )
+                                request_timeout=60,)
 
 
-# Instructions 
 
 instructions = """
 You are the Super Agent.  
 
-Your ONLY output MUST be a **single valid JSON object**.  
-Do NOT include any text, explanation, or quotes outside the JSON.  
-Do NOT add trailing commas.  
+Your ONLY job is to understand the intent of the user query and route it to the correct sub-agent.  
 
-Your job:
-1. Read the user input.
-2. Determine the MOST relevant sub-agent from the available list.
-3. Return ONLY the sub-agent name in JSON.
-
----
-
-### Available Sub-Agents:
-
-1. OrderPlacementAgent
-   - Capabilities:
-     - Search inventory using SQL Toolkit.
-     - Place customer orders using OrderPlacementTool.
-   - Workflow:
-     1. Extract brand and product keywords from user input.
-     2. Query the `Inventory` table for matching products (status='active').
-     3. Return product information (Product Name, Brand, Price, Availability) in human-readable format.
-     4. Validate order details if user requests to place an order (quantity, email).
-     5. Place the order using `OrderPlacementTool`.
-     6. Return structured JSON output:
-        {{
-          "output": "✅ Your order (ID: <order_id>) for <Product Name> (<quantity> items) has been placed successfully. Total price: $<price>."
-        }}
-   - Example user queries:
-     - "Order 2 Wireless Bluetooth Headphones"
-     - "Show me all Samsung products"
-     - "I want to order 1 Apple Smartphone X15 for john@email.com"
-
-2. OrderCancellationAgent
-   - Capabilities:
-     - Check if an order exists using SQL Toolkit.
-     - Cancel an order using `OrderCancellationTool`.
-   - Workflow:
-     1. Extract `order_id` from user input.
-     2. Query the `Orders` table to validate the order exists.
-        - If invalid:
-          {{ "output": "❌ Invalid order ID. Please provide a valid order ID." }}
-     3. Return order details for confirmation:
-        {{ "output": "📦 Order found! Order ID: <order_id>, Status: <status>, Quantity: <quantity>. Do you want to cancel this order?" }}
-     4. If user confirms **yes**:
-        - Trigger `OrderCancellationTool` with:
-          - `order_id` (from input)
-          - `reason` (default = "Customer Cancelled the Order" if missing)
-          - `email_address` (default = aiagent_05@gmail.com if missing)
-        - Tool performs:
-          - Update **Order Table** (status = Cancelled, quantity = 0)
-          - Insert record into **Order Audit**
-          - Restore stock in **Inventory** and log in **Inventory Audit**
-          - Send cancellation confirmation email
-          - Calculate `total_refund` = ordered_quantity × price
-        - Return structured JSON:
-          {{
-            "order": {{
-              "order_id": <order_id>,
-              "status": "Cancelled"
-            }},
-            "product_name": "<product_name>",
-            "email": {{"to": "<customer_email>"}},
-            "total_refund": <refund_amount>
-          }}
-        - Convert to human-readable output:
-          {{ "output": "✅ Your order no #<order_id> has been cancelled successfully. A refund of <refund_amount> will be credited within 5 working days. 💳" }}
-     5. If user says **no** → reply politely:
-        {{ "output": "🙏 Okay, no cancellation made. Do you need any other assistance?" }}
-   - Example user queries:
-     - "Cancel my order #5"
-     - "I want to cancel order 12 for john@example.com"
-     - "Check order ID 15"
-     - "Yes, cancel my order"
-     - "No, keep my order"
+⚠️ STRICT RULES:
+- Always output a valid JSON object with a single key `"sub_agent"`.  
+- Never include `"output"` in your response.  
+- Never generate explanations, SQL, or text. Only return JSON.  
+- Do NOT re-emit or modify the sub-agent’s outputs (e.g., confirmations, cancellations, product answers). That is handled entirely by the sub-agents.  
 
 ---
 
-### General Rules for Master Agent
-- Always respond with **a single valid JSON object**:
-  {{
-    "sub_agent": "<AgentName>"
-  }}
-- Never output raw SQL or tool JSON to the user.
-- Always maintain polite and professional tone with emojis.
-- Determine the correct sub-agent by interpreting user intent:
-  - Product search or order placement → `OrderPlacementAgent`
-  - Order cancellation or checking order status → `OrderCancellationAgent`
-- Use `OrderPlacementAgent` and `OrderCancellationAgent` **handlers** defined in the `sub_agents` registry.
-- Extract and return JSON cleanly so downstream code can parse it safely.
+### Available Sub-Agents
+
+1. OrderPlacementAgent  
+   - Handles everything related to **new orders and cart management**.  
+   - Scope:  
+     - Product search in inventory  
+     - Add to cart / remove from cart  
+     - View cart contents  
+     - Checkout and place orders  
+   - Example queries:  
+     - "Order 2 Wireless Bluetooth Headphones"  
+     - "Add 1 Apple Smartphone X15 to my cart"  
+     - "Show my cart"  
+     - "Checkout my cart"  
+     - "Place this order"  
+
+2. OrderCancellationAgent  
+   - Handles everything related to **checking and cancelling existing orders**.  
+   - Scope:  
+     - Validate order IDs in database  
+     - Ask for confirmation before cancellation  
+     - Cancel order if confirmed  
+   - Example queries:  
+     - "Cancel my order ORD-12345"  
+     - "Check order number 12345"  
+     - "Yes, cancel my order"  
+     - "No, keep my order"  
+
+3. ProductInquiryAgent  
+   - Handles everything related to **general product questions and catalog exploration**.  
+   - Scope:  
+     - Brand-level or category-level product queries  
+     - Feature questions not tied to specific cart actions  
+     - Uses FAISS/cosine similarity search for catalogs  
+   - Example queries:  
+     - "Show me Home Appliances"  
+     - "Does Apple Smartphone X15 exist?"  
+     - "List all Bluetooth headphones"  
+     - "What Samsung TVs do you have?"  
 
 ---
 
-### JSON Output Format (Mandatory)
-- Always return:
-  {{
-    "sub_agent": "<AgentName>"
-  }}
-- No additional text, no quotes outside JSON, no explanations.
+### Routing Logic
+- If the query is about **buying, adding to cart, or checkout** → route to `OrderPlacementAgent`.  
+- If the query is about **cancelling or checking an existing order** → route to `OrderCancellationAgent`.  
+- If the query is about **exploring or asking about products without ordering/cancelling** → route to `ProductInquiryAgent`.  
+- If unsure, prefer **OrderPlacementAgent** (because most ambiguous queries involve new purchases).  
+
+---
+
+### Final Rule
+Your output format is **always exactly**:
+
+{{
+  "sub_agent": "<AgentName>"
+}}
+
+⚠️ Never return more than one sub-agent.  
+⚠️ Never return free text.  
+⚠️ Never include `"output"` here.  
 """
+
+
+
 
 # Prompt template
 prompt = ChatPromptTemplate.from_messages([
@@ -145,6 +123,7 @@ prompt = ChatPromptTemplate.from_messages([
 
 
 chain = prompt | llm
+
 
 # Runnable with history
 master_agent = RunnableWithMessageHistory(
@@ -173,62 +152,73 @@ def extract_json(text: str):
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
-async def master(user_input: str,session_id: str):
+async def master(user_input: str, session_id: str):
     try:
-        # Invoke master agent to select the sub-agent
+        logger.info(f"[MASTER_AGENT] Processing input='{user_input}' | session_id={session_id}")
+
+        # Run classification through master agent
         resp = await master_agent.ainvoke(
             {"input": user_input},
             config={"configurable": {"session_id": session_id}}
         )
-        print("Sub-agent selection:", resp.content)
+        logger.debug(f"[MASTER_AGENT] Raw LLM response: {resp.content}")
 
-        # Extract JSON safely
         data = extract_json(resp.content)
+        logger.debug(f"[MASTER_AGENT] Parsed {data}")
+
         if not data:
+            logger.error(f"[MASTER_AGENT] Failed to extract JSON from LLM response: {resp.content}")
             return {"ok": False, "error": "Failed to extract JSON", "raw": resp.content}
 
+        # If LLM already returned a sub-agent response (contains "output")
+        if "output" in data and "sub_agent" not in data:
+            logger.info("[MASTER_AGENT] Detected direct sub-agent output, forwarding to user")
+            return {
+                "output": data["output"],
+                "success": True,
+                "session_id": session_id
+            }
+
+        # Normal flow → route to sub-agent
         sub_agent_name = data.get("sub_agent")
+        logger.info(f"[MASTER_AGENT] Selected sub-agent: {sub_agent_name}")
+
         agent_entry = sub_agents.get(sub_agent_name)
         if not agent_entry:
+            logger.error(f"[MASTER_AGENT] Unsupported sub-agent: {sub_agent_name}")
             return {"ok": False, "error": f"Unsupported sub-agent: {sub_agent_name}", "raw": data}
 
-        # Call the sub-agent handler with try/except
         try:
             sub_result = await agent_entry["handler"](session_id, user_input=user_input)
-
+            logger.debug(f"[MASTER_AGENT] Raw sub-agent result: {sub_result}")
         except Exception as e:
-            print("Sub-agent error:", traceback.format_exc())
-            sub_result = {
+            logger.exception(f"[MASTER_AGENT] Error in sub-agent '{sub_agent_name}'")
+            return {
                 "output": f"Error in {sub_agent_name}: {str(e)}",
                 "success": False,
-                "session_id": session_id}
+                "session_id": session_id
+            }
 
-        print("Result from sub_agent:", sub_result)
-
-
-        # Safely parse output if it's a stringified dict
-        final_output = ""
-        if isinstance(sub_result.get("output"), str):
+        # Extract final output safely
+        output_val = sub_result.get("output", "")
+        if isinstance(output_val, str):
             try:
-                nested_output = ast.literal_eval(sub_result["output"])
-                final_output = nested_output.get("output") or nested_output.get("message") or sub_result["output"]
+                nested = ast.literal_eval(output_val)
+                output_val = nested.get("output", output_val)
             except Exception:
-                final_output = sub_result["output"]
-        else:
-            final_output = sub_result.get("output", "")
+                pass
 
         return {
-            "output": final_output,
+            "output": output_val,
             "success": sub_result.get("success", False),
-            "session_id": sub_result.get("session_id", session_id),
+            "session_id": sub_result.get("session_id", session_id)
         }
 
     except Exception as e:
-        print("Master agent error:", traceback.format_exc())
+        logger.exception("[MASTER_AGENT] Unexpected error")
         return {
             "output": f"Unexpected error in master agent: {str(e)}",
             "success": False,
             "session_id": session_id
         }
 
- 

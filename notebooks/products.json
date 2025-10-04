@@ -1,0 +1,62 @@
+[
+  {
+    "title": "Smart LED TV 55\"",
+    "brand": "Samsung",
+    "price": "599.99 USD",
+    "content": "Smart LED TV 55\" Brand: Samsung Price: 599.99 USD About this item: \u2022 4K Ultra HD resolution for crystal-clear viewing \u2022 Smart TV with built-in Wi-Fi and streaming apps \u2022 HDR support for vivid colors and contrast \u2022 Multiple HDMI and USB ports for connectivity Technical Details: Specification Details Display Size 55 inches Resolution 3840 x 2160 (4K UHD) Connectivity Wi-Fi, HDMI, USB Audio Dolby Digital Surround Dimensions 48.7 x 28.1 x 2.3 inches Weight 15.5 kg Warranty 1 Year Manufacturer Warranty What's in the Box Smart LED TV 55\", User Manual, Warranty Card"
+  },
+  {
+    "title": "Wireless Bluetooth Headphones",
+    "brand": "Sony",
+    "price": "199.99 USD",
+    "content": "Wireless Bluetooth Headphones Brand: Sony Price: 199.99 USD About this item: \u2022 Noise-cancelling over-ear design \u2022 Up to 30 hours of battery life \u2022 Bluetooth 5.0 wireless connectivity \u2022 Comfort-fit cushioned earcups Technical Details: Specification Details Type Over-Ear Connectivity Bluetooth 5.0 Battery Life 30 hours Charging Time 2 hours Weight 250 g Warranty 1 Year Manufacturer Warranty What's in the Box Wireless Bluetooth Headphones, User Manual, Warranty Card"
+  },
+  {
+    "title": "Smartphone X15",
+    "brand": "Apple",
+    "price": "999.0 USD",
+    "content": "Smartphone X15 Brand: Apple Price: 999.0 USD About this item: \u2022 5G connectivity for lightning-fast downloads \u2022 128GB internal storage \u2022 OLED display with high brightness \u2022 Advanced dual-camera system Technical Details: Specification Details Display 6.1-inch OLED Storage 128GB Connectivity 5G, Wi-Fi, Bluetooth Battery 4000 mAh Camera 12MP + 12MP Dual Camera Weight 180 g Warranty 1 Year Manufacturer Warranty What's in the Box Smartphone X15, User Manual, Warranty Card"
+  },
+  {
+    "title": "Air Purifier Pro",
+    "brand": "Dyson",
+    "price": "499.5 USD",
+    "content": "Air Purifier Pro Brand: Dyson Price: 499.5 USD About this item: \u2022 HEPA filter captures 99.97% of particles \u2022 Smart air quality monitoring \u2022 Covers up to 500 sq. ft. \u2022 Low noise operation with night mode Technical Details: Specification Details Filter Type HEPA H13 Coverage Area 500 sq. ft. Noise Level 22 dB (Low) Connectivity Wi-Fi Enabled Dimensions 12 x 12 x 24 inches Weight 5.5 kg Warranty 1 Year Manufacturer Warranty What's in the Box Air Purifier Pro, User Manual, Warranty Card"
+  },
+  {
+    "title": "Robot Vacuum Cleaner",
+    "brand": "iRobot",
+    "price": "349.0 USD",
+    "content": "Robot Vacuum Cleaner Brand: iRobot Price: 349.0 USD About this item: \u2022 Smart mapping and navigation \u2022 Powerful suction for carpets and hard floors \u2022 Self-docking and recharging \u2022 App and voice control compatible Technical Details: Specification Details Type Robot Vacuum Battery Life 120 minutes Suction Power 2000 Pa Noise Level 55 dB Connectivity Wi-Fi, App, Voice Control Dimensions 13.3 x 13.3 x 3.6 inches Weight 3.5 kg Warranty 1 Year Manufacturer Warranty What's in the Box Robot Vacuum Cleaner, User Manual, Warranty Card"
+  },
+  {
+    "title": "Gaming Laptop G15",
+    "brand": "Dell",
+    "price": "1299.99 USD",
+    "content": "Gaming Laptop G15 Brand: Dell Price: 1299.99 USD About this item: \u2022 RTX 3060, 16GB RAM, 512GB SSD \u2022 High durability and quality assurance \u2022 User-friendly design Technical Details: Specification Details Brand Dell Category Computers Warranty 1 Year Manufacturer Warranty What's in the Box Gaming Laptop G15, User Manual, Warranty Card"
+  },
+  {
+    "title": "Mechanical Keyboard RGB",
+    "brand": "Logitech",
+    "price": "129.99 USD",
+    "content": "Mechanical Keyboard RGB Brand: Logitech Price: 129.99 USD About this item: \u2022 Backlit mechanical gaming keyboard \u2022 High durability and quality assurance \u2022 User-friendly design Technical Details: Specification Details Brand Logitech Category Computers Warranty 1 Year Manufacturer Warranty What's in the Box Mechanical Keyboard RGB, User Manual, Warranty Card"
+  },
+  {
+    "title": "Men's Running Shoes",
+    "brand": "Nike",
+    "price": "89.99 USD",
+    "content": "Men's Running Shoes Brand: Nike Price: 89.99 USD About this item: \u2022 Lightweight breathable running shoes \u2022 High durability and quality assurance \u2022 User-friendly design Technical Details: Specification Details Brand Nike Category Clothing Warranty 1 Year Manufacturer Warranty What's in the Box Men's Running Shoes, User Manual, Warranty Card"
+  },
+  {
+    "title": "Women's Jacket WinterPro",
+    "brand": "North Face",
+    "price": "179.0 USD",
+    "content": "Women's Jacket WinterPro Brand: North Face Price: 179.0 USD About this item: \u2022 Waterproof insulated jacket \u2022 High durability and quality assurance \u2022 User-friendly design Technical Details: Specification Details Brand North Face Category Clothing Warranty 1 Year Manufacturer Warranty What's in the Box Women's Jacket WinterPro, User Manual, Warranty Card"
+  },
+  {
+    "title": "Data Science Handbook",
+    "brand": "O'Reilly",
+    "price": "59.99 USD",
+    "content": "Data Science Handbook Brand: O'Reilly Price: 59.99 USD About this item: \u2022 Comprehensive guide to modern data science \u2022 High durability and quality assurance \u2022 User-friendly design Technical Details: Specification Details Brand O'Reilly Category Books Warranty 1 Year Manufacturer Warranty What's in the Box Data Science Handbook, User Manual, Warranty Card"
+  }
+]

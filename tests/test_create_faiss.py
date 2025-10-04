@@ -1,23 +1,22 @@
 import asyncio
 from app.rag_services.build_store_vectors import RAGVectorStoreBuilder
-
+from app.rag_services.vector_retrieval import VectorRetriever
 
 
 
 
 async def main():
 
-    builder = RAGVectorStoreBuilder(
-        pdf_dir="/home/farheens/Desktop/Order_Management_System/app/documents")
+    builder = RAGVectorStoreBuilder()
+    retrieval = VectorRetriever()
 
 
     # Build vector store from PDFs (uncomment if not built yet)
-    await builder.build_vector_store()
+    # await builder.build_vector_store()
 
-    # Search the FAISS store by collection name (PDF stem name)
-    results = await builder.search("product-inquriy", "smart tv", k=3)
+    # # # Search the FAISS store by collection name (PDF stem name)
+    results = await retrieval.search("product-inquriy", "smart tv", k=3)
+
+    print(results)
     
-    for r, score in results:
-        print(r.page_content[:200].replace("\n", " "), score)
-
 asyncio.run(main())
