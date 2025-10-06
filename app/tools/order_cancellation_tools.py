@@ -52,7 +52,7 @@ class OrderCancellationTool(BaseTool):
     - InventoryAudit row must include all mandatory columns shown in your schema snapshot.
     """
 
-    name: str = "Order_Cancellation_Tool"
+    name: str = "OrderCancellationTool"
     description: str = (
         "Cancels an existing order (one or more rows in Orders for the same order_number), "
         "restores stock, updates audits, and emails the customer."

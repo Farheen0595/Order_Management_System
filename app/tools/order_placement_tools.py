@@ -6,10 +6,36 @@ from pydantic import BaseModel, Field
 from langchain.tools import BaseTool
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
-
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail
+from app.config.settings import settings
 from app.schemas.order_placement_schema import OrderPlacementInput
 from app.database.engine import AsyncSessionLocal
 from app.database.models import Inventory,ShoppingCart,Orders,InventoryAudit,OrderAudit
+
+
+
+SENDGRID_API_KEY = settings.SENDGRID_API_KEY
+
+def send_order_confirmation_email(to_email: str, order_number: str, items: list, total: float) -> None:
+    """Send order confirmation email via SendGrid."""
+    try:
+        item_lines = "<br>".join([f"{name} ({qty} @ ${price:.2f})" for name, qty, price in items])
+        body = (
+            f"Your order {order_number} has been placed successfully.<br>"
+            f"Items:<br>{item_lines}<br>"
+            f"Total: ${total:.2f}"
+        )
+        message = Mail(
+            from_email="sdfarheen05@gmail.com",
+            to_emails=to_email,
+            subject=f"Order {order_number} Confirmation",
+            html_content=body,
+        )
+        sg = SendGridAPIClient(SENDGRID_API_KEY)
+        sg.send(message)
+    except Exception as e:
+        print(f"[OrderPlacementTool] Email send failed: {e}")
 
 
 
@@ -33,7 +59,7 @@ class OrderPlacementTool(BaseTool):
 
 
 
-    name: str = "Order_Placement_Tool"
+    name: str = "OrderPcementTool"
     description: str = ( "Manage cart and place orders. Actions: add_to_cart, remove_from_cart, view_cart, checkout. "
                           "SKU must come from SQL query; never fabricate SKUs.")
     
@@ -245,45 +271,35 @@ class OrderPlacementTool(BaseTool):
         return json_struc(body)
 
     async def _checkout(self, db: AsyncSession) -> str:
-
         """
         - Locks inventory rows (FOR UPDATE) to prevent races.
         - Deducts quantity_available by the purchased qty (once), and releases the same qty from reserved_quantity.
         - Writes consistent audits with exact before/after values.
+        - Sends confirmation email after order placement.
         """
         
-
         # Pull current cart + lock inventory rows
-
         rows = (
             await db.execute(
                 select(ShoppingCart, Inventory)
                 .join(Inventory, ShoppingCart.sku == Inventory.sku)
                 .where(ShoppingCart.session_id == self.session_token)
                 .with_for_update()   # <-- lock the joined rows (Inventory) for this transaction
-            )).all()
-
+            )
+        ).all()
 
         if not rows:
             return json_struc("Your cart is empty. Cannot place an order.")
 
-        # Validate enough stock (considering reservations already held by this session)
-
+        # Validate enough stock
         for cart, inv in rows:
-            # Effective free stock for this cart line is already reserved for this session,
-            # but we still guard against negatives.
-
             if cart.quantity <= 0:
                 return json_struc("Cart contains invalid quantity.")
-            
             if inv.reserved_quantity <= 0:
-                # Should not happen if add_to_cart worked properly; still guard
-
                 return json_struc(f"Item {inv.sku} appears not reserved. Please re-add to cart.")
 
         order_number = gen_order_number()
         grand_total = 0.0
-
 
         for cart, inv in rows:
             qty = cart.quantity
@@ -291,33 +307,24 @@ class OrderPlacementTool(BaseTool):
             total_price = unit_price * qty
             grand_total += total_price
 
-            # Capture previous values BEFORE mutation
             prev_available = inv.quantity_available
             prev_reserved = inv.reserved_quantity
 
-            # Deduct from available ONCE and release the same qty from reserved
-            new_available = max(0, prev_available - qty)
-            new_reserved = max(0, prev_reserved - qty)
-
-            # Sanity guard: we must not deduct more than what's reserved
-
-            # If reservation somehow drifted, clamp to valid domain
+            # Deduct from available and release reserved quantity
             if prev_reserved < qty:
-                # clamp to what's reserved (should not normally happen)
-
                 qty_to_release = prev_reserved
-                # recompute new_available using the original purchase quantity (still deduct)
                 new_reserved = 0
-
                 new_available = max(0, prev_available - qty)
             else:
                 qty_to_release = qty
+                new_reserved = max(0, prev_reserved - qty)
+                new_available = max(0, prev_available - qty)
 
             inv.quantity_available = new_available
             inv.reserved_quantity = new_reserved
             db.add(inv)
 
-            # Create order line
+            # Create order row
             order_row = Orders(
                 order_number=order_number,
                 session_id=self.session_token,
@@ -331,7 +338,7 @@ class OrderPlacementTool(BaseTool):
             db.add(order_row)
             await db.flush()  # to get order_row.id for OrderAudit
 
-            # Inventory audit: exact before/after
+            # Inventory audit
             db.add(
                 InventoryAudit(
                     sku=inv.sku,
@@ -348,7 +355,7 @@ class OrderPlacementTool(BaseTool):
                 )
             )
 
-            # Order audit: PENDING -> PLACED
+            # Order audit
             db.add(
                 OrderAudit(
                     order_id=order_row.id,
@@ -366,6 +373,7 @@ class OrderPlacementTool(BaseTool):
 
         await db.commit()
 
+        # Prepare summary
         item_lines = [
             f"{inv.product_name} ({cart.quantity} @ ${float(cart.price_when_added):.2f})"
             for cart, inv in rows
@@ -374,8 +382,27 @@ class OrderPlacementTool(BaseTool):
             f"Your order ({order_number}) has been placed.\n"
             f"Items:\n- " + "\n- ".join(item_lines) + f"\nTotal: ${grand_total:.2f}"
         )
+
+        # Prepare email items
+        email_items = [
+            (inv.product_name, cart.quantity, float(cart.price_when_added))
+            for cart, inv in rows
+        ]
+
+        # Send confirmation email
+        try:
+            default_email = "customer@example.com"  # Replace with session user email
+            send_order_confirmation_email(
+                to_email=default_email,
+                order_number=order_number,
+                items=email_items,
+                total=grand_total,
+            )
+        except Exception as e:
+            print(f"[OrderPlacementTool] Email send failed: {e}")
+
         return json_struc(summary)
-    
+
 
     def _run(self, *args, **kwargs):
         raise NotImplementedError("Use async mode")

@@ -62,15 +62,41 @@ class RAGRunner:
             elif isinstance(m, AIMessage):
                 llm_messages.append({"role": "assistant", "content": m.content})
 
+        
+
+        # Convert structured JSON results into a readable string for LLM
+        if isinstance(context["output"], list):
+            human_context = []
+            for item in context["output"]:
+                entry = (
+                    f"Product: {item.get('title','N/A')}\n"
+                    f"Brand: {item.get('brand','N/A')}\n"
+                    f"Price: {item.get('price','N/A')}\n"
+                    f"Details: {item.get('content','')}...\n"
+                )
+                human_context.append(entry)
+            human_context_str = "\n".join(human_context)
+        else:
+            human_context_str = str(context["output"])
+
         messages = [
-                    {
+            {
                     "role": "system",
-                        "content": (
-                            "You are a precise assistant grounded strictly in the provided context. "
-                            "If the answer is not in the context, reply exactly: "
-                            "\"The answer is not in the provided documents.\""
-                        ),},
-            {"role": "system", "content": f"Retrieved context:\n{context['output']}"},]
+                    "content": (
+                        "You are a helpful product assistant grounded strictly in the provided context. "
+                        "When showing product information, restructure it in a clear, human-readable way:\n"
+                        "- Use bullets for features and technical details\n"
+                        "- Highlight title, brand, and price clearly\n"
+                        "- Expand into natural sentences when needed (not raw JSON)\n"
+                        "- Make it look like a catalog entry or product description for a user\n"
+                        "If the answer is not in the context, reply exactly:\n"
+                        "\"The answer is not in the provided documents.\""
+                    ),
+                },
+
+            {"role": "system", "content": f"Retrieved context:\n{human_context_str}"},
+        ]
+
         
         messages.extend(llm_messages)
         messages.append({"role": "user", "content": query})

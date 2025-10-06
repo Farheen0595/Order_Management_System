@@ -23,6 +23,7 @@ COOKIE_PASSWORD = settings.COOKIE_SECRET
 
 
 # ---------------------- Session Initialization ----------------------
+
 def initialize_sessions():
 
     """
@@ -33,33 +34,42 @@ def initialize_sessions():
     """
 
 
-    # Setup cookies
     cookies = EncryptedCookieManager(prefix="oms_", password=COOKIE_PASSWORD)
 
     if not cookies.ready():
         st.stop()
 
-
     # --- Handle session_id ---
+
     if "session_id" not in cookies:
+
         resp = requests.get(SESSION_ID_URL)
+
         if resp.status_code == 200:
+
             new_session = resp.json()["session_id"]
+
             cookies["session_id"] = new_session
-            cookies.save()  # persist in browser cookie
+
+            cookies.save()  
+
             st.session_state["session_id"] = new_session
-            st.write(" New session started and saved in cookie.")
+
+            # st.write(" New session started and saved in cookie.")
         else:
+
             st.error(f"Failed to start session: {resp.status_code} {resp.text}")
 
     else:
-        # Restore from cookie
+
         st.session_state["session_id"] = cookies["session_id"]
-        st.write(f"Restored session from cookie: {cookies['session_id']}")
+
+        # st.write(f"Restored session from cookie: {cookies['session_id']}")
             
 
 
     if "messages" not in st.session_state:
+
         st.session_state.messages = []
 
     
@@ -93,15 +103,9 @@ async def handle_master_agent(user_query: str):
         result = resp.json()
         ans = result.get("output", " No answer generated.")
 
-        # Update session ID if backend enforces it
         st.session_state["session_id"] = result.get(
             "session_id", st.session_state["session_id"]
-        )
-
-        # Display + store
-        # st.markdown(ans)
-        st.session_state["messages"].append({"role": "assistant", "content": ans})
-
+            )
         return ans
     
     else:

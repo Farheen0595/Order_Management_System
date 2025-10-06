@@ -1,4 +1,4 @@
-# order_cancellation_agent.py
+# app/agents/order_cancellation_agent.py
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.agents import create_tool_calling_agent, AgentExecutor
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -11,18 +11,17 @@ from app.config.settings import settings
 from app.tools.order_cancellation_tools import OrderCancellationTool
 from tenacity import retry, stop_after_attempt, wait_fixed
 import json
-from ast import literal_eval
 
 
-def create_order_cancellation_agent():
-
+# ------------------------------- Create Agent -------------------------------
+def create_order_cancellation_agent(session_id: str):
     """
     Combined Order Cancellation Agent:
-    - SQL Toolkit for order_number check queries
+    - SQL Toolkit for order_number validation queries
     - OrderCancellationTool for updating orders and inventory
     """
 
-    # LLM
+    # Initialize LLM
     llm = ChatGoogleGenerativeAI(
         model=settings.DEFAULT_MODEL,
         api_key=settings.GEMINI_API_KEY,
@@ -45,10 +44,13 @@ def create_order_cancellation_agent():
         print(f"SQL connection failed: {e}")
         sql_tools = []
 
-    custom_tools = [OrderCancellationTool()]
-    all_tools = sql_tools + custom_tools
+    # Tools
+    cancellation_tool = OrderCancellationTool(session_token=session_id)
+    tools = sql_tools + [cancellation_tool]
 
-
+    # ------------------------------------------------------------------------
+    # Instructions
+    # ------------------------------------------------------------------------
     instructions = """
 You are an Order Cancellation Agent.  
 You have two main capabilities:  
@@ -62,93 +64,115 @@ You have two main capabilities:
 - Query the `Orders` table to check if the **order_number** exists.  
 
 ✅ Example SQL:  
-SELECT order_number, customer_email, status, total_amount  
+SELECT order_number, sku, quantity, status  
 FROM Orders  
 WHERE order_number = '<order_number>';  
 
-- If no result found:  
-  {{ "output": "❌ Invalid order ID. Please provide a valid order ID." }}  
+---
 
-- If order exists, return in this **polite, human-readable format**:  
-  {{ "output": "📦 Order found! Order ID: <order_number>, Status: <status>, Total: $<total_amount>. Do you want to cancel this order?" }}  
+### 🧩 Missing Order ID Handling (NEW & IMPORTANT)
+- If the user says things like “cancel the order” but **does not mention an order number**,  
+  you must **politely ask for the order number first**:  
+  {{"output": "Please provide your order ID (for example, ORD-1234ABCD) so I can locate and verify your order."}}  
+- Never try to guess or make up an order number.  
+- Do not proceed to cancellation until a valid `order_number` is confirmed and validated in the database.  
 
 ---
 
-### 2. User Confirmation Workflow
+### 2. Order Validation Results
+- If no result found after querying the Orders table:  
+  {{"output": "❌ Invalid order ID. Please check and provide a valid order ID."}}  
+
+- If the order exists, respond in this human-friendly way:  
+  {{"output": "📦 Order found! Order ID: <order_number>, Status: <status>, Item: <sku> × <quantity>. Do you want to cancel this order?"}}  
+
+---
+
+### 3. User Confirmation Workflow
 - If user responds **yes** → proceed to cancellation workflow.  
 - If user responds **no** → reply politely:  
-  {{ "output": "🙏 Okay, no cancellation made. Do you need any other assistance?" }}  
-- Do not proceed with cancellation without explicit **yes** from the user.  
+  {{"output": "🙏 Okay, no cancellation made. Do you need any other assistance?"}}  
+- Never cancel an order without explicit confirmation.  
 
 ---
 
-### 3. Order Cancellation Workflow
-- To cancel an order, always trigger `Order_Cancellation_Tool` with this schema:  
+### 4. Order Cancellation Workflow
+- Always trigger `Order_Cancellation_Tool` with this schema:  
 {{
   "action": "cancel_order",
   "order_number": "<order_number>",
   "reason": "<reason or default>"
 }}  
 
-⚠️ Rules for tool usage:
+⚠️ Tool Rules:
 - `action` must always be `"cancel_order"`.  
-- `order_number` must match exactly from SQL query results.  
+- `order_number` must exactly match the validated value from SQL.  
 - `reason` defaults to `"Customer cancelled the order"` if not provided.  
-- Never fabricate or guess `order_number`.  
+- Never fabricate or assume `order_number`.  
 
 Inside the tool:  
 1. Update **Orders** → set `status = "CANCELLED"`.  
 2. Insert into **OrderAudit** (old → new status).  
-3. Restore stock in **Inventory** and log into **InventoryAudit**.  
-4. Send cancellation confirmation email to `customer_email`.  
-5. Calculate refund = `ordered_quantity × price`.  
+3. Restore stock in **Inventory**:  
+   - `quantity_available = quantity_available + <quantity>`  
+   - `reserved_quantity = GREATEST(reserved_quantity - <quantity>, 0)`  
+4. Log into **InventoryAudit**.  
+5. Refund = `<quantity> × price` (calculate via join with Inventory if needed).  
 
-✅ Example Successful Output:  
-{{ "output": "✅ Your order (ID: ORD-1234ABCD) has been cancelled successfully. A refund of $199.99 will be processed within 5 working days. 💳" }}  
+✅ Example Success:  
+{{"output": "✅ Your order (ID: ORD-1234ABCD) has been cancelled successfully. A refund of $199.99 will be processed within 5 working days. 💳"}}  
 
-❌ Example Failure Outputs:  
+❌ Example Failures:  
 - Already cancelled:  
-  {{ "output": "⚠️ Order ORD-1234ABCD is already cancelled." }}  
-- Delivered/Shipped:  
-  {{ "output": "⚠️ Order ORD-1234ABCD cannot be cancelled because it has already been shipped/delivered." }}  
+  {{"output": "⚠️ Order ORD-1234ABCD is already cancelled."}}  
+- Shipped or delivered:  
+  {{"output": "⚠️ Order ORD-1234ABCD cannot be cancelled because it has already been shipped/delivered."}}  
 - Invalid ID:  
-  {{ "output": "❌ Invalid order ID. Please check and try again." }}  
+  {{"output": "❌ Invalid order ID. Please check and try again."}}  
 - Unexpected error:  
-  {{ "output": "❌ Unable to process the cancellation at this time. Please try again later." }}  
+  {{"output": "❌ Unable to process the cancellation at this time. Please try again later."}}  
 
 ---
 
-### 4. Error Handling
-- Always handle gracefully.  
-- If tool returns empty or error → return a polite JSON message.  
-- Never expose SQL or raw tool JSON directly.  
+### 5. Error Handling (MANDATORY)
+- Always handle errors gracefully.  
+- If the tool or SQL result is empty, return a polite JSON message.  
+- Never expose SQL, Python traces, or raw tool JSON to the user.  
+- If anything unexpected occurs, use this safe fallback:  
+  {{"output": "⚠️ Unable to process your cancellation right now. Please try again later."}}  
 
 ---
 
-### 5. Conversation Rules
-- Always validate `order_number` first before cancellation.  
-- Never cancel without explicit **yes**.  
-- Always produce a JSON with `"output"` key.  
-- Be polite, professional, and clear.  
+### 6. Conversation Rules
+- Always validate the order before cancellation.  
+- Never cancel without explicit user confirmation ("yes").  
+- Always wrap your response as JSON with a single `"output"` key.  
+- Be polite, professional, and human-friendly.  
 
 ---
 
-### 6. Example User Queries
+### 7. Example User Queries
 - "Cancel my order ORD-5001"  
 - "I want to cancel order ORD-7777"  
 - "Can you check order number ORD-1234?"  
+- "Cancel the order" → (Ask for order ID)  
 - "Yes, cancel it"  
 - "No, keep it active"  
 
 ---
 
-### 7. Final Answer Rules
-- Always return valid JSON with only one key `"output"`.  
-- Never return raw SQL, Python, or tool call JSON.  
-- Always interpret results into polite, human-readable messages.  
+### 8. Fallback & Safety (MANDATORY)
+- You must never expose internal logs, history, or SQL.  
+- If the user doesn't provide an order number → ask for it.  
+- If still not provided after asking → return this final polite fallback:  
+  {{"output": "⚠️ Unable to proceed without a valid order ID. Please provide your order number."}}  
+- If the tool fails or produces an error → return:  
+  {{"output": "⚠️ Unable to process the cancellation at this time. Please try again later."}}  
+- Never leave `"output"` empty.  
+- Always return valid JSON with one key: `"output"`.  
 """
 
-
+    # ------------------------------------------------------------------------
     prompt = ChatPromptTemplate.from_messages([
         ("system", instructions),
         MessagesPlaceholder(variable_name="chat_history"),
@@ -156,12 +180,11 @@ Inside the tool:
         ("placeholder", "{agent_scratchpad}")
     ])
 
-    # Create agent
-    agent = create_tool_calling_agent(llm=llm, tools=all_tools, prompt=prompt)
+    agent = create_tool_calling_agent(llm=llm, tools=tools, prompt=prompt)
 
-    agent_executor = AgentExecutor(
+    executor = AgentExecutor(
         agent=agent,
-        tools=all_tools,
+        tools=tools,
         verbose=True,
         handle_parsing_errors=True,
         max_iterations=12,
@@ -169,7 +192,7 @@ Inside the tool:
     )
 
     agent_with_memory = RunnableWithMessageHistory(
-        runnable=agent_executor,
+        runnable=executor,
         get_session_history=get_by_session_id,
         input_messages_key="input",
         history_messages_key="chat_history",
@@ -179,17 +202,28 @@ Inside the tool:
     return agent_with_memory
 
 
+# ------------------------------- Clean JSON -------------------------------
+def clean_json_output(output: str) -> str:
+    if not isinstance(output, str):
+        return str(output)
+    out = output.strip()
+    if out.startswith("```"):
+        out = out.strip("`")
+        if out.lower().startswith("json"):
+            out = out[4:].strip()
+    if out.endswith("```"):
+        out = out[:-3].strip()
+    return out
+
+
+# ------------------------------- Handler -------------------------------
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
 async def handle_order_cancellation(session_id: str, user_input: str):
-    """
-    Handle order check and cancellation request.
-    """
-
     print(f"\nOrder Cancellation Agent Processing: '{user_input}'")
     print("=" * 60)
 
     try:
-        agent = create_order_cancellation_agent()
+        agent = create_order_cancellation_agent(session_id=session_id)
 
         result = await agent.ainvoke(
             {"input": user_input},
@@ -198,31 +232,23 @@ async def handle_order_cancellation(session_id: str, user_input: str):
 
         print("ORDER CANCELLATION AGENT RESULT", result)
 
-        if isinstance(result, dict):
-            output_raw = result.get("output") or result.get("text") or str(result)
-        else:
-            output_raw = str(result)
+        output_raw = result.get("output") if isinstance(result, dict) else str(result)
+        cleaned = clean_json_output(output_raw)
 
-        output_raw = literal_eval(output_raw.strip())
-        print(f"Agent output: {output_raw}")
+        try:
+            parsed = json.loads(cleaned)
+        except json.JSONDecodeError:
+            parsed = {"output": cleaned or "Unable to process your request right now."}
 
-        if not output_raw:
-            return {
-                "output": "Please check the query or try again.",
-                "success": False,
-                "session_id": session_id
-            }
-        else:
-            return {
-                "output": output_raw["output"],
-                "success": True,
-                "session_id": session_id
-            }
+        if not parsed.get("output"):
+            parsed = {"output": "Unable to process your cancellation at this time. Please try again later."}
+
+        return {"output": parsed["output"], "success": True, "session_id": session_id}
 
     except Exception as e:
         print(f"Exception in handle_order_cancellation: {str(e)}")
         return {
-            "output": f"Error in Order Cancellation Agent: {str(e)}",
+            "output": "Something went wrong while processing your cancellation. Please try again later.",
             "success": False,
             "session_id": session_id
         }

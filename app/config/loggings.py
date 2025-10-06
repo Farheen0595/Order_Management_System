@@ -2,22 +2,21 @@ import logging
 import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from .settings import settings   
-
+from app.config.settings import settings
 
 
 class AppOnlyFilter(logging.Filter):
-
     """Allow only logs from the 'app' package."""
-
     def filter(self, record):
         return record.name.startswith("app")
-    
 
-def setup_logging( level: int, 
-                   log_dir: str = settings.LOG_DIRECTORY,
-                   log_file_name: str = settings.LOG_FILE_NAME):
-    
+
+def setup_logging(
+    level: int,
+    log_dir: str = settings.LOG_DIRECTORY,
+    log_file_name: str = settings.LOG_FILE_NAME,
+    filter_app_only: bool = False  # New parameter to control filtering
+):
     # Ensure log directory exists
     log_path = Path(log_dir)
     log_path.mkdir(parents=True, exist_ok=True)
@@ -31,17 +30,20 @@ def setup_logging( level: int,
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(level)
     console_handler.setFormatter(formatter)
-    console_handler.addFilter(AppOnlyFilter())   
+    if filter_app_only:
+        console_handler.addFilter(AppOnlyFilter())
 
     # Rotating file handler
-    file_handler = RotatingFileHandler(log_path_file, 
-                                       maxBytes=5_000_000, 
-                                       backupCount=3, 
-                                       encoding="utf-8")
-    
+    file_handler = RotatingFileHandler(
+        log_path_file,
+        maxBytes=5_000_000,
+        backupCount=3,
+        encoding="utf-8"
+    )
     file_handler.setLevel(level)
     file_handler.setFormatter(formatter)
-    file_handler.addFilter(AppOnlyFilter())      
+    if filter_app_only:
+        file_handler.addFilter(AppOnlyFilter())
 
     # Configure root logger
     root_logger = logging.getLogger()
@@ -50,11 +52,15 @@ def setup_logging( level: int,
     root_logger.addHandler(console_handler)
     root_logger.addHandler(file_handler)
 
-    logging.getLogger("app").info(f"Logging initialized. Level={logging.getLevelName(level)}, File={log_path_file}")
+    logging.getLogger("app").info(
+        f"Logging initialized. Level={logging.getLevelName(level)}, "
+        f"File={log_path_file}, Filter={filter_app_only}"
+    )
 
 
+# Example usage:
+# Log everything from all packages
+# setup_logging(level=logging.DEBUG)
 
-# if __name__ == "__main__":
-
-
-    # setup_logging(level=logging.INFO)
+# Or log only from 'app' package (original behavior)
+# setup_logging(level=logging.DEBUG, filter_app_only=True)

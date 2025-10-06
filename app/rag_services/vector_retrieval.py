@@ -34,11 +34,13 @@ class VectorRetriever:
         )
         self.embed_slug = self._slug(self.embedding_model_name)
 
+
     @staticmethod
     def _slug(name: str) -> str:
         """Safe slug for directory naming"""
         base = name.split("/")[-1]
         return re.sub(r"[^a-z0-9]+", "-", base.lower()).strip("-")
+
 
     async def search(self,
                      collection_name: str,
@@ -55,20 +57,27 @@ class VectorRetriever:
                 vs.similarity_search_with_score, query, k
             )
 
+            print("\n Results",result)
             if not result:
                 output_data = {"output": "Product not found", "success": False}
                 return json.dumps(output_data)
 
             else:
                 chunks = []
-                for doc, _ in result:
-                    text = doc.page_content
-                    text = text.replace("\n", " ").replace("\u2022", "-").strip()
-                    text = " ".join(text.split())
-                    chunks.append(text)
+                for doc, score in result:
+                    chunks.append({
+                        "title": doc.metadata.get("title", ""),
+                        "brand": doc.metadata.get("brand", ""),
+                        "price": doc.metadata.get("price", ""),
+                        "content": doc.page_content,
+                        "score": float(score)
+                    })
 
-                output_data = {"output": "\n\n".join(chunks), "success": True}
-                return json.dumps(output_data)
+                print("\n CHUNKS",type(chunks))
+                # output_data = {"output": "\n\n".join(chunks), "success": True}
+                output_data = {"output": chunks, "success": True}
+
+                return json.dumps(output_data,indent=2)
 
         except Exception as e:
             logger.error("Error in ProductVectorSearchTool: %s", e)

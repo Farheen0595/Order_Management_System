@@ -1,7 +1,6 @@
 import streamlit as st
-from app.utils.streamlit_functions import initialize_sessions, handle_master_agent
 import asyncio
-
+from app.utils.streamlit_functions import initialize_sessions, handle_master_agent
 
 # ----------------- PAGE CONFIG -----------------
 st.set_page_config(page_title="Agentic Order Management System", layout="wide")
@@ -9,29 +8,39 @@ st.set_page_config(page_title="Agentic Order Management System", layout="wide")
 st.title("Order Management Agent")
 
 
-# Initialize sessions
+# Initialize session and show ID
 session_id = initialize_sessions()
-st.write(f"Current Session ID: {session_id}")
+# st.write(f"Current Session ID: {session_id}")
 
 
-# Show history
+
+# Display past messages
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
+
+
 # Chat input
 if prompt := st.chat_input("Ask your Query"):
-    st.session_state.messages.append({"role": "user", "content": prompt})
+    # Show user's message
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    try:
-        response = asyncio.run(handle_master_agent(user_query=prompt))
-    except Exception as e:
-        response = f" I encountered an issue: {e}"
-        print(f"[DEBUG] {e}")
 
-    with st.chat_message("assistant"):
-        with st.spinner("Thinking..."):
-            st.markdown(response)
-    st.session_state.messages.append({"role": "assistant", "content": response})
+    st.session_state.messages.append({"role": "user", "content": prompt})
+
+    try:
+        with st.chat_message("assistant"):
+            with st.spinner("Thinking..."):
+                response = asyncio.run(handle_master_agent(user_query=prompt))
+          
+                st.markdown(response)
+
+        st.session_state.messages.append({"role": "assistant", "content": response})
+
+    except Exception as e:
+        error_message = f"I encountered an issue: {e}"
+        print(f"[DEBUG ERROR] {e}")
+        st.error(error_message)
+        st.session_state.messages.append({"role": "assistant", "content": error_message})
