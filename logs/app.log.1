@@ -1,0 +1,89 @@
+[2025-10-14 15:16:32] [PID:37202] [INFO] [app.utils.sessionid_functions:26] Ensuring session for ID: 714357f5-3f3d-4403-8236-419ee38f3ee5, User: Guest User
+[2025-10-14 15:16:32] [PID:37202] [DEBUG] [app.utils.sessionid_functions:27] TTL minutes: 1440
+[2025-10-14 15:16:32] [PID:37202] [DEBUG] [app.utils.sessionid_functions:33] Checking for existing session: 714357f5-3f3d-4403-8236-419ee38f3ee5
+[2025-10-14 15:16:32] [PID:37202] [DEBUG] [app.utils.sessionid_functions:38] Current time (IST): 2025-10-14 15:16:32.087740+05:30, Expiry time: 2025-10-15 15:16:32.087740+05:30
+[2025-10-14 15:16:32] [PID:37202] [DEBUG] [app.utils.sessionid_functions:54] Found existing session: 714357f5-3f3d-4403-8236-419ee38f3ee5
+[2025-10-14 15:16:32] [PID:37202] [DEBUG] [app.utils.sessionid_functions:59] Localizing naive datetime: 2025-10-14 17:10:59
+[2025-10-14 15:16:32] [PID:37202] [DEBUG] [app.utils.sessionid_functions:77] Updating last activity for active session: 714357f5-3f3d-4403-8236-419ee38f3ee5
+[2025-10-14 15:16:32] [PID:37202] [DEBUG] [app.utils.sessionid_functions:83] Committing Session Changes to database
+[2025-10-14 15:16:32] [PID:37202] [INFO] [app.utils.sessionid_functions:85] User Session operation completed for 714357f5-3f3d-4403-8236-419ee38f3ee5
+[2025-10-14 15:16:32] [PID:37202] [INFO] [app.routers.agents_apis:65] Invoking master agent
+[2025-10-14 15:16:32] [PID:37202] [INFO] [app.agents.master_agent:139] [SUPER AGENT] Processing input='checkout' | session_id=714357f5-3f3d-4403-8236-419ee38f3ee5
+[2025-10-14 15:16:32] [PID:37202] [DEBUG] [app.agents.memory:30] Retrieving chat history for session: 714357f5-3f3d-4403-8236-419ee38f3ee5
+[2025-10-14 15:16:32] [PID:37202] [DEBUG] [app.agents.memory:35] Found existing history for session: 714357f5-3f3d-4403-8236-419ee38f3ee5
+[2025-10-14 15:16:32] [PID:37202] [DEBUG] [app.agents.memory:16] Adding 2 messages to history
+[2025-10-14 15:16:32] [PID:37202] [DEBUG] [app.agents.memory:18] History size now: 50 messages
+[2025-10-14 15:16:32] [PID:37202] [DEBUG] [app.agents.master_agent:144] [SUPER AGENT] LLM response: {"sub_agent": "OrderPlacementAgent"}
+[2025-10-14 15:16:32] [PID:37202] [DEBUG] [app.agents.master_agent:147] [SUPER AGENT] Parsed {'sub_agent': 'OrderPlacementAgent'}
+[2025-10-14 15:16:32] [PID:37202] [INFO] [app.agents.master_agent:156] [SUPER AGENT] Selected sub-agent: OrderPlacementAgent
+[2025-10-14 15:16:32] [PID:37202] [INFO] [app.agents.order_placement_agent:262] [714357f5-3f3d-4403-8236-419ee38f3ee5] 🔹 Starting order placement for input: checkout
+[2025-10-14 15:16:32] [PID:37202] [INFO] [app.agents.order_placement_agent:28] Creating order placement agent for session: 714357f5-3f3d-4403-8236-419ee38f3ee5
+[2025-10-14 15:16:32] [PID:37202] [INFO] [app.agents.order_placement_agent:43] SQL toolkit initialized with 4 tools
+[2025-10-14 15:16:32] [PID:37202] [DEBUG] [app.agents.order_placement_agent:203] [714357f5-3f3d-4403-8236-419ee38f3ee5] Prompt created successfully
+[2025-10-14 15:16:32] [PID:37202] [DEBUG] [app.agents.order_placement_agent:206] [714357f5-3f3d-4403-8236-419ee38f3ee5] Agent created with 5 tools
+[2025-10-14 15:16:32] [PID:37202] [DEBUG] [app.agents.order_placement_agent:217] [714357f5-3f3d-4403-8236-419ee38f3ee5] AgentExecutor ready (max_iterations=8)
+[2025-10-14 15:16:32] [PID:37202] [INFO] [app.agents.order_placement_agent:226] [714357f5-3f3d-4403-8236-419ee38f3ee5] Agent with memory wrapper created
+[2025-10-14 15:16:32] [PID:37202] [INFO] [app.agents.order_placement_agent:269] [714357f5-3f3d-4403-8236-419ee38f3ee5] 🔸 Invoking agent...
+[2025-10-14 15:16:32] [PID:37202] [DEBUG] [app.agents.memory:30] Retrieving chat history for session: 714357f5-3f3d-4403-8236-419ee38f3ee5
+[2025-10-14 15:16:32] [PID:37202] [DEBUG] [app.agents.memory:35] Found existing history for session: 714357f5-3f3d-4403-8236-419ee38f3ee5
+[2025-10-14 15:16:33] [PID:37202] [DEBUG] [app.agents.memory:16] Adding 2 messages to history
+[2025-10-14 15:16:33] [PID:37202] [DEBUG] [app.agents.memory:18] History size now: 52 messages
+[2025-10-14 15:16:33] [PID:37202] [INFO] [app.agents.order_placement_agent:286] [714357f5-3f3d-4403-8236-419ee38f3ee5]  No intermediate steps were returned by the agent.
+[2025-10-14 15:16:33] [PID:37202] [WARNING] [app.agents.order_placement_agent:249] Could not find 'output' key in LLM response; returning raw cleaned text.
+[2025-10-14 15:16:33] [PID:37202] [INFO] [app.agents.order_placement_agent:295] [714357f5-3f3d-4403-8236-419ee38f3ee5]  Final Agent Output: Please provide your email address for the order confirmation.
+[2025-10-14 15:16:33] [PID:37202] [DEBUG] [app.agents.master_agent:169] [SUPER AGENT] RAW sub-agent result: {'output': 'Please provide your email address for the order confirmation.', 'success': True, 'session_id': '714357f5-3f3d-4403-8236-419ee38f3ee5'}
+[2025-10-14 15:16:33] [PID:37202] [DEBUG] [app.routers.agents_apis:70] Master agent raw result: {'output': 'Please provide your email address for the order confirmation.', 'success': True, 'session_id': '714357f5-3f3d-4403-8236-419ee38f3ee5'}
+[2025-10-14 15:16:33] [PID:37202] [DEBUG] [app.routers.agents_apis:74] Processing dictionary response
+[2025-10-14 15:16:33] [PID:37202] [INFO] [app.routers.agents_apis:88] Request processed successfully - Session: 714357f5-3f3d-4403-8236-419ee38f3ee5
+[2025-10-14 15:16:33] [PID:37202] [DEBUG] [app.routers.agents_apis:89] Final response: output='Please provide your email address for the order confirmation.' success=True session_id='714357f5-3f3d-4403-8236-419ee38f3ee5'
+[2025-10-14 15:16:42] [PID:37202] [INFO] [app.routers.agents_apis:56] Received master agent request - Session: 714357f5-3f3d-4403-8236-419ee38f3ee5
+[2025-10-14 15:16:42] [PID:37202] [DEBUG] [app.routers.agents_apis:57] User input: sdfarheen05@gmail.com...
+[2025-10-14 15:16:42] [PID:37202] [DEBUG] [app.routers.agents_apis:61] Validating session: 714357f5-3f3d-4403-8236-419ee38f3ee5
+[2025-10-14 15:16:42] [PID:37202] [INFO] [app.utils.sessionid_functions:26] Ensuring session for ID: 714357f5-3f3d-4403-8236-419ee38f3ee5, User: Guest User
+[2025-10-14 15:16:42] [PID:37202] [DEBUG] [app.utils.sessionid_functions:27] TTL minutes: 1440
+[2025-10-14 15:16:42] [PID:37202] [DEBUG] [app.utils.sessionid_functions:33] Checking for existing session: 714357f5-3f3d-4403-8236-419ee38f3ee5
+[2025-10-14 15:16:42] [PID:37202] [DEBUG] [app.utils.sessionid_functions:38] Current time (IST): 2025-10-14 15:16:42.614592+05:30, Expiry time: 2025-10-15 15:16:42.614592+05:30
+[2025-10-14 15:16:42] [PID:37202] [DEBUG] [app.utils.sessionid_functions:54] Found existing session: 714357f5-3f3d-4403-8236-419ee38f3ee5
+[2025-10-14 15:16:42] [PID:37202] [DEBUG] [app.utils.sessionid_functions:59] Localizing naive datetime: 2025-10-14 17:10:59
+[2025-10-14 15:16:42] [PID:37202] [DEBUG] [app.utils.sessionid_functions:77] Updating last activity for active session: 714357f5-3f3d-4403-8236-419ee38f3ee5
+[2025-10-14 15:16:42] [PID:37202] [DEBUG] [app.utils.sessionid_functions:83] Committing Session Changes to database
+[2025-10-14 15:16:42] [PID:37202] [INFO] [app.utils.sessionid_functions:85] User Session operation completed for 714357f5-3f3d-4403-8236-419ee38f3ee5
+[2025-10-14 15:16:42] [PID:37202] [INFO] [app.routers.agents_apis:65] Invoking master agent
+[2025-10-14 15:16:42] [PID:37202] [INFO] [app.agents.master_agent:139] [SUPER AGENT] Processing input='sdfarheen05@gmail.com' | session_id=714357f5-3f3d-4403-8236-419ee38f3ee5
+[2025-10-14 15:16:42] [PID:37202] [DEBUG] [app.agents.memory:30] Retrieving chat history for session: 714357f5-3f3d-4403-8236-419ee38f3ee5
+[2025-10-14 15:16:42] [PID:37202] [DEBUG] [app.agents.memory:35] Found existing history for session: 714357f5-3f3d-4403-8236-419ee38f3ee5
+[2025-10-14 15:16:43] [PID:37202] [DEBUG] [app.agents.memory:16] Adding 2 messages to history
+[2025-10-14 15:16:43] [PID:37202] [DEBUG] [app.agents.memory:18] History size now: 54 messages
+[2025-10-14 15:16:43] [PID:37202] [DEBUG] [app.agents.master_agent:144] [SUPER AGENT] LLM response: {"sub_agent": "OrderPlacementAgent"}
+[2025-10-14 15:16:43] [PID:37202] [DEBUG] [app.agents.master_agent:147] [SUPER AGENT] Parsed {'sub_agent': 'OrderPlacementAgent'}
+[2025-10-14 15:16:43] [PID:37202] [INFO] [app.agents.master_agent:156] [SUPER AGENT] Selected sub-agent: OrderPlacementAgent
+[2025-10-14 15:16:43] [PID:37202] [INFO] [app.agents.order_placement_agent:262] [714357f5-3f3d-4403-8236-419ee38f3ee5] 🔹 Starting order placement for input: sdfarheen05@gmail.com
+[2025-10-14 15:16:43] [PID:37202] [INFO] [app.agents.order_placement_agent:28] Creating order placement agent for session: 714357f5-3f3d-4403-8236-419ee38f3ee5
+[2025-10-14 15:16:43] [PID:37202] [INFO] [app.agents.order_placement_agent:43] SQL toolkit initialized with 4 tools
+[2025-10-14 15:16:43] [PID:37202] [DEBUG] [app.agents.order_placement_agent:203] [714357f5-3f3d-4403-8236-419ee38f3ee5] Prompt created successfully
+[2025-10-14 15:16:43] [PID:37202] [DEBUG] [app.agents.order_placement_agent:206] [714357f5-3f3d-4403-8236-419ee38f3ee5] Agent created with 5 tools
+[2025-10-14 15:16:43] [PID:37202] [DEBUG] [app.agents.order_placement_agent:217] [714357f5-3f3d-4403-8236-419ee38f3ee5] AgentExecutor ready (max_iterations=8)
+[2025-10-14 15:16:43] [PID:37202] [INFO] [app.agents.order_placement_agent:226] [714357f5-3f3d-4403-8236-419ee38f3ee5] Agent with memory wrapper created
+[2025-10-14 15:16:43] [PID:37202] [INFO] [app.agents.order_placement_agent:269] [714357f5-3f3d-4403-8236-419ee38f3ee5] 🔸 Invoking agent...
+[2025-10-14 15:16:43] [PID:37202] [DEBUG] [app.agents.memory:30] Retrieving chat history for session: 714357f5-3f3d-4403-8236-419ee38f3ee5
+[2025-10-14 15:16:43] [PID:37202] [DEBUG] [app.agents.memory:35] Found existing history for session: 714357f5-3f3d-4403-8236-419ee38f3ee5
+[2025-10-14 15:16:45] [PID:37202] [INFO] [app.tools.order_placement_tools:41] Preparing order confirmation email for sdfarheen05@gmail.com (Order ORD-7BD958EF)
+[2025-10-14 15:16:47] [PID:37202] [INFO] [app.tools.order_placement_tools:62] Order confirmation email sent successfully to sdfarheen05@gmail.com
+[2025-10-14 15:16:47] [PID:37202] [INFO] [app.tools.order_placement_tools:351] OrderPlacementTool completed: Your order (ORD-7BD958EF) has been placed successfully.
+Items:
+- Mechanical Keyboard RGB (3 @ $129.99)
+Total: $389.97
+
+✅ Confirmation email sent successfully. (sdfarheen05@gmail.com)
+[2025-10-14 15:16:48] [PID:37202] [DEBUG] [app.agents.memory:16] Adding 2 messages to history
+[2025-10-14 15:16:48] [PID:37202] [DEBUG] [app.agents.memory:18] History size now: 56 messages
+[2025-10-14 15:16:48] [PID:37202] [INFO] [app.agents.order_placement_agent:278] [714357f5-3f3d-4403-8236-419ee38f3ee5] Agent completed 1 intermediate steps:
+[2025-10-14 15:16:48] [PID:37202] [INFO] [app.agents.order_placement_agent:282]    Step 1:  Tool → OrderPlacementTool
+[2025-10-14 15:16:48] [PID:37202] [DEBUG] [app.agents.order_placement_agent:283]   Tool Input: {'customer_email': 'sdfarheen05@gmail.com', 'action': 'checkout'}
+[2025-10-14 15:16:48] [PID:37202] [INFO] [app.agents.order_placement_agent:284]   Observation: {"output": "Your order (ORD-7BD958EF) has been placed successfully.\nItems:\n- Mechanical Keyboard RGB (3 @ $129.99)\nTotal: $389.97\n\n\u2705 Confirmation email sent successfully. (sdfarheen05@gmail.com)"}
+[2025-10-14 15:16:48] [PID:37202] [INFO] [app.agents.order_placement_agent:295] [714357f5-3f3d-4403-8236-419ee38f3ee5]  Final Agent Output: Your order (ORD-7BD958EF) has been placed successfully.\nItems:\n- Mechanical Keyboard RGB (3 @ $129.99)\nTotal: $389.97\n✅ Confirmation email sent to sdfarheen05@gmail.com
+[2025-10-14 15:16:48] [PID:37202] [DEBUG] [app.agents.master_agent:169] [SUPER AGENT] RAW sub-agent result: {'output': 'Your order (ORD-7BD958EF) has been placed successfully.\\nItems:\\n- Mechanical Keyboard RGB (3 @ $129.99)\\nTotal: $389.97\\n✅ Confirmation email sent to sdfarheen05@gmail.com', 'success': True, 'session_id': '714357f5-3f3d-4403-8236-419ee38f3ee5'}
+[2025-10-14 15:16:48] [PID:37202] [DEBUG] [app.routers.agents_apis:70] Master agent raw result: {'output': 'Your order (ORD-7BD958EF) has been placed successfully.\\nItems:\\n- Mechanical Keyboard RGB (3 @ $129.99)\\nTotal: $389.97\\n✅ Confirmation email sent to sdfarheen05@gmail.com', 'success': True, 'session_id': '714357f5-3f3d-4403-8236-419ee38f3ee5'}
+[2025-10-14 15:16:48] [PID:37202] [DEBUG] [app.routers.agents_apis:74] Processing dictionary response
+[2025-10-14 15:16:48] [PID:37202] [INFO] [app.routers.agents_apis:88] Request processed successfully - Session: 714357f5-3f3d-4403-8236-419ee38f3ee5
+[2025-10-14 15:16:48] [PID:37202] [DEBUG] [app.routers.agents_apis:89] Final response: output='Your order (ORD-7BD958EF) has been placed successfully.\\nItems:\\n- Mechanical Keyboard RGB (3 @ $129.99)\\nTotal: $389.97\\n✅ Confirmation email sent to sdfarheen05@gmail.com' success=True session_id='714357f5-3f3d-4403-8236-419ee38f3ee5'
