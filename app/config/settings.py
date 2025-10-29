@@ -2,7 +2,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from pathlib import Path
 
 
-# Resolve .env at project root (3 level up at the config)
+# Resolve .env at project root
 BASE_DIR = Path(__file__).parent.parent.parent
 ENV_PATH = f'{BASE_DIR}/.env'
 
@@ -12,50 +12,30 @@ class Settings(BaseSettings):
 
 
     """
-        App settings loader.
-        Loads configuration values from `.env` file and environment variables.
-        Keeps all API keys, defaults, and paths in one place.
+    App settings loader.
+    Loads configuration values from `.env` file and environment variables.
     """
-
     model_config = SettingsConfigDict(env_file=ENV_PATH,
-                                      env_file_encoding="utf-8",
-                                      extra="ignore")
+                                    env_file_encoding="utf-8",
+                                    extra="ignore")
     
-
-
-    # APP ENV
+    # App Environment
     APP_ENV: str
     
-    # GEMINI APU KEY
+    # API Keys
     GEMINI_API_KEY: str
-
-    # GEMINI MODEL
-    DEFAULT_MODEL: str
-
-    # EMBEDDING MODEL
-    DEFAULT_EMBEDDING_MODEL: str
-
-
-    # Documet_path
-    PDF_PATH: str
-
-    # CHUNCK SIZE AND CHUNK OVERLAPP
-
-    CHUNK_SIZE: int
-    CHUNCK_OVERLAP: int
-    # EMAIL API KEY
-
-    SENDGRID_API_KEY:str
-
-    # COLLECTION_NAME
-    COLLECTION_NAME:str 
- 
-    # COOKIE
+    SENDGRID_API_KEY: str
     COOKIE_SECRET: str
-    # DEFAULT TOP K CHUNKS
-    DEFAULT_TOP_K: int
+
+    # URLs
+    SESSION_ID_URL: str
+    MASTER_AGENT_URL: str
     
-    # MYSQL CREDENTIALS
+    # Paths
+    PDF_PATH: str
+    VECTOR_DATABASE_DIR: str
+    
+    # Database Configuration
     DB_HOSTNAME: str
     DB_PORT: int
     DB_USERNAME: str
@@ -64,54 +44,28 @@ class Settings(BaseSettings):
     DB_POOL_SIZE: int
     DB_POOL_OVERFLOW: int
 
-    # MYSQL TABLE NAMES
-    DB_INVENTORY: str
-    DB_INVENTORY_AUDIT: str
-    DB_ORDER: str
-    DB_ORDER_AUDIT: str
-    DB_USER_SESSIONS: str
-    DB_SHOPPING_CART: str
-    DB_Order_Items: str
-
-    # VECTOR INDEX
-    VECTOR_DATABASE_DIR: str
+settings = Settings()
 
 
-    # LOG DIR & FILE NAME
-    LOG_DIRECTORY: str  = "logs"
-    LOG_FILE_NAME: str = "app.log"
-
-
-    # AGENT URL 
-    SESSION_ID_URL: str
-    MASTER_AGENT_URL: str
-
-
-settings =  Settings()
-
-
+# Directory validation
 def ensure_dirs_writable():
-
     """
-        Make sure VECTOR_DATABASE_DIR exists and can be written to.
-        Creates the folder if missing and checks write permission
-        by writing a small test file.
+    Make sure VECTOR_DATABASE_DIR exists and can be written to.
+    Creates the folder if missing and checks write permission.
     """
-
     p = Path(settings.VECTOR_DATABASE_DIR).resolve()
     p.mkdir(parents=True, exist_ok=True)
 
     test_file = p / "checking"
-
     try:
         with open(test_file, "w") as f:
             f.write("ok")
         test_file.unlink(missing_ok=True)
-
     except PermissionError as e:
-
-        raise PermissionError(f"Cannot write to INDEX_DIR={p}." f"Fix directory VECTOR_DATABASE_DIR permissions or set  to a user-writable path.") from e
-    
+        raise PermissionError(
+            f"Cannot write to INDEX_DIR={p}. "
+            f"Fix directory VECTOR_DATABASE_DIR permissions or set to a user-writable path."
+        ) from e
 
 ensure_dirs_writable()
 

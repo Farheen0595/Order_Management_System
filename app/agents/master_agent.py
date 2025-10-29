@@ -1,181 +1,99 @@
 import json
+import logging
+import ast
+import traceback
+from tenacity import retry, stop_after_attempt, wait_fixed
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.prompts import ChatPromptTemplate, SystemMessagePromptTemplate, MessagesPlaceholder
 from langchain_core.runnables.history import RunnableWithMessageHistory
-from tenacity import retry, stop_after_attempt, wait_fixed
-import ast
-import traceback
 from app.config.settings import settings
+from app.config.constants import constants
 from app.agents.memory import get_by_session_id
 from app.agents.order_placement_agent import handle_order_placement
 from app.agents.order_cancellation_agent import handle_order_cancellation
 from app.agents.product_inquiry_agent import handle_product_inquiry
-import logging
 from app.config.loggings import setup_logging
 
+# Setup logging
+logger = logging.getLogger(__name__)
 
+# Sub-agent registry
+sub_agents = {
+                "OrderPlacementAgent": {"handler": handle_order_placement},
+                "OrderCancellationAgent": {"handler": handle_order_cancellation},
+                "ProductInquiryAgent": {"handler": handle_product_inquiry},
+            }
 
-setup_logging(level=logging.DEBUG)
-logger = logging.getLogger(__file__)
-
-
-sub_agents = {"OrderPlacementAgent": {"handler": handle_order_placement},
-              "OrderCancellationAgent":{"handler": handle_order_cancellation},
-              "ProductInquiryAgent" :{"handler":handle_product_inquiry}}
-                    
-
-
-# LLM 
-llm = ChatGoogleGenerativeAI(model=settings.DEFAULT_MODEL, 
+# LLM setup
+llm = ChatGoogleGenerativeAI(
+                            model=constants.DEFAULT_MODEL,
                             api_key=settings.GEMINI_API_KEY,
-                            max_tokens=2000,
+                            max_tokens=1000,
                             temperature=0,
-                            request_timeout=60,)
+                            request_timeout=60,
+)
 
 
+# Super agent instruction 
 instructions = """
-You are the **Super Agent Router**, the brain that directs all user messages to the correct specialized sub-agent.
+You are the **Super Agent Router**, responsible for routing user messages to the correct sub-agent.
 
-Your mission:
-→ Understand user intent.  
-→ Maintain conversation context from memory.  
-→ Route input to the correct sub-agent, returning only a single JSON key `"sub_agent"`.
+Your **only** task:
+→ Understand user intent from the message and memory context.  
+→ Route to the correct sub-agent.  
+→ Respond **only** with a JSON object of the form:
+   {{"sub_agent": "<AgentName>"}}
 
 ---
 
-## ⚙️ BEHAVIORAL PRINCIPLES
+## ⚙️ ROUTING PRINCIPLES
 
-1. **Always Context-Aware**  
-   - Use the ongoing chat history (memory) to infer context.  
-   - If the user replies with short confirmations like "yes", "no", "2", "cancel it", "keep it", "checkout", etc., you must infer which sub-agent was last active from history and continue with it.  
-   - Example: If last agent was `OrderPlacementAgent` and user says “yes”, route to `OrderPlacementAgent`.
+1. **Context-Aware**
+   - Use conversation memory to infer intent.
+   - If the user replies briefly ("yes", "no", "2", "checkout", "cancel", etc.), continue with the last active sub-agent.
+   - Example: If the last sub-agent was `OrderPlacementAgent` and user says “yes”, route again to `OrderPlacementAgent`.
 
-2. **Never Lose Memory Context**
-   - If context retrieval fails or memory is empty, safely default to `OrderPlacementAgent`.  
-   - Never throw internal errors to the user.  
-   - Never return full chat history; it must only guide your routing decision.
+2. **Fail-Safe Default**
+   - If memory is empty, unclear, or context retrieval fails → use `OrderPlacementAgent`.
 
-3. **Strict JSON-Only Response**
-   - Output **only**:
-     ```json
+3. **Strict Output Format**
+   - Respond only with valid JSON:
      {{"sub_agent": "<AgentName>"}}
-     ```
-   - Never include explanations, reasons, or additional keys.
-   - Never use Markdown, code fences, or text outside JSON.
+   - No Markdown, no explanations, no extra words.
 
-4. **Resilient Fallback Handling**
-   - If routing is unclear due to ambiguous or incomplete user input, return:
-     ```json
-     {{"sub_agent": "OrderPlacementAgent"}}
-     ```
-   - If conversation state recovery fails, still safely continue with OrderPlacementAgent (default path).
+4. **Unrecognized Input**
+   - Default to {{"sub_agent": "OrderPlacementAgent"}}.
 
 ---
 
 ## 🧭 AVAILABLE SUB-AGENTS
 
 ### 1️⃣ OrderPlacementAgent
-**Purpose:** Manage product purchases, cart operations, and checkout.
+Handles ordering, buying, cart updates, checkout.
+Trigger words: "order", "buy", "add to cart", "remove", "checkout", "place order", "quantity", "available", "book", "purchase".
+Continuation triggers: "yes add 2", "2 units ", "confirm", "checkout".
 
-**Handles:**
-- Product search for purchase intent  
-- Checking stock and quantity  
-- Add/remove/view cart  
-- Checkout and place order  
+### 2️⃣ ProductInquiryAgent
+Handles product browsing, details, and specifications.
+Trigger words: "show me", "list products", "catalog", "specs", "details", "models", "options", "available".
 
-**Trigger words:** "order", "buy", "add to cart", "remove from cart", "checkout", "place order", "quantity", "available", "how many", "book", "purchase"
-
-**Contextual continuation examples:**
-- If previous step was product search or cart, and user says “yes”, “2”, “checkout”, “confirm”, “place it” → continue with `OrderPlacementAgent`
-
-**Example inputs:**
-- “Order 2 Samsung TVs”
-- “Add a smartphone to my cart”
-- “Checkout my cart”
-- “Buy 1 Logitech Keyboard”
-- “Yes” (after product confirmation)
-- “2” (after quantity prompt)
+### 3️⃣ OrderCancellationAgent
+Handles order cancellations, refunds, and returns.
+Trigger words: "cancel", "refund", "return", "void order", "abort order", "cancel order", "order cancellation".
+Continuation triggers: "cancel", "refund", "abort".
 
 ---
 
-### 2️⃣ OrderCancellationAgent
-**Purpose:** Manage existing orders — validate, check, and cancel.
+## 🧩 WORKFLOW SUMMARY
 
-**Handles:**
-- Validate order IDs  
-- Check order status  
-- Cancel orders upon confirmation  
-- Restore inventory and issue refunds  
+1. Use context + trigger words to pick the correct sub-agent.
+2. If continuation message → reuse last active sub-agent.
+3. Always output strict JSON:
+   {{"sub_agent": "<AgentName>"}}
+4. Do **not** include explanations, Markdown, or other text.
+5. Do **not** generate tool responses or "output" text — only route.
 
-**Trigger words:** "cancel", "cancel my order", "stop order", "remove my order", "check my order", "order status", "where is my order", "track my order", "undo order", "return"
-
-**Contextual continuation examples:**
-- If previous step was order validation and user says “yes”, “cancel it”, or “no” → continue with `OrderCancellationAgent`
-
-**Example inputs:**
-- “Cancel my order ORD-12345”
-- “Check order ORD-5678”
-- “Cancel the order”
-- “Yes, cancel it”
-- “No, keep it active”
-
----
-
-### 3️⃣ ProductInquiryAgent
-**Purpose:** General browsing and discovery — no buying or cancelling intent.
-
-**Handles:**
-- Product details, specifications, and categories  
-- Listing products by brand, price, or type  
-- Catalog browsing and feature comparison  
-
-**Trigger words:** "show me", "list products", "catalog", "specs", "details", "compare", "what models", "what options", "do you have", "available models"
-
-**Example inputs:**
-- “Show all Apple products”
-- “What are the specs of Smartphone X15?”
-- “Compare Logitech keyboards”
-- “List available Smart TVs”
-
----
-
-## 🧠 ROUTING LOGIC (Step-by-Step)
-
-### 1️⃣ CONTEXTUAL CONTINUATION
-If user input is:
-- “yes”, “no”, “confirm”, “cancel it”, “keep it”, “2”, “checkout”, “place”, “proceed”
-→ Route to the **last sub-agent used** from memory.  
-If no last context found → default to `"OrderPlacementAgent"`.
-
-### 2️⃣ CANCELLATION INTENT
-If message contains:
-- “cancel”, “cancel my order”, “order status”, “stop”, “check order”, “track order”
-→ `"OrderCancellationAgent"`
-
-### 3️⃣ PURCHASE / CART INTENT
-If message contains:
-- “order”, “buy”, “cart”, “add”, “remove from cart”, “checkout”, “place order”, “quantity”, “available”
-→ `"OrderPlacementAgent"`
-
-### 4️⃣ PRODUCT BROWSING INTENT
-If message contains:
-- “show me”, “list”, “catalog”, “specs”, “models”, “details”, “compare”, “options”
-→ `"ProductInquiryAgent"`
-
-### 5️⃣ AMBIGUOUS CASES
-If uncertain → `"OrderPlacementAgent"`
-
----
-
-## 🚨 FAILURE HANDLING RULES
-- Never raise an exception or return Python/stack trace.
-- Never return the chat history.
-- Always ensure the output key `"sub_agent"` exists.
-- If memory or routing logic fails → respond with:
-  ```json
-  {{"sub_agent": "OrderPlacementAgent"}}
 """
-
 
 
 
@@ -193,12 +111,11 @@ chain = prompt | llm
 
 # Runnable with history
 master_agent = RunnableWithMessageHistory(
-    runnable=chain,
-    get_session_history=get_by_session_id,
-    input_messages_key="input",
-    history_messages_key="chat_history",
-    output_messages_key="output",
-)
+                                        runnable=chain,
+                                        get_session_history=get_by_session_id,
+                                        input_messages_key="input",
+                                        history_messages_key="chat_history",
+                                        output_messages_key="output",)
 
 
 # JSON extraction 
@@ -215,57 +132,48 @@ def extract_json(text: str):
     return None
 
 
-
-
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
 async def master(user_input: str, session_id: str):
+
     try:
-        logger.info(f"[MASTER_AGENT] Processing input='{user_input}' | session_id={session_id}")
+        logger.info(f"[SUPER AGENT] Processing input='{user_input}' | session_id={session_id}")
 
-
-        # Run classification through master agent
-        resp = await master_agent.ainvoke(
-            {"input": user_input},
-            config={"configurable": {"session_id": session_id}}
-        )
-        logger.debug(f"[MASTER_AGENT] Raw LLM response: {resp.content}")
+        # Invoke master agent
+        resp = await master_agent.ainvoke({"input": user_input},config={"configurable": {"session_id": session_id}})
+        
+        logger.debug(f"[SUPER AGENT] LLM response: {resp.content}")
 
         data = extract_json(resp.content)
-        logger.debug(f"[MASTER_AGENT] Parsed {data}")
+        logger.debug(f"[SUPER AGENT] Parsed {data}")
 
         if not data:
-            logger.error(f"[MASTER_AGENT] Failed to extract JSON from LLM response: {resp.content}")
-            return {"ok": False, "error": "Failed to extract JSON", "raw": resp.content}
 
-        # If LLM already returned a sub-agent response (contains "output")
-        if "output" in data and "sub_agent" not in data:
-            logger.info("[MASTER_AGENT] Detected direct sub-agent output, forwarding to user")
-            return {
-                "output": data["output"],
-                "success": True,
-                "session_id": session_id
-            }
+            logger.error(f"[SUPER AGENT]] Failed to extract JSON from LLM response: {resp.content}")
 
-        # Normal flow → route to sub-agent
+            return {"success": False, "error": "Failed to extract JSON", "raw": resp.content}
+        
         sub_agent_name = data.get("sub_agent")
-        logger.info(f"[MASTER_AGENT] Selected sub-agent: {sub_agent_name}")
+        logger.info(f"[SUPER AGENT] Selected sub-agent: {sub_agent_name}")
 
         agent_entry = sub_agents.get(sub_agent_name)
+
         if not agent_entry:
-            logger.error(f"[MASTER_AGENT] Unsupported sub-agent: {sub_agent_name}")
-            return {"ok": False, "error": f"Unsupported sub-agent: {sub_agent_name}", "raw": data}
+            logger.error(f"[SUPER AGENT] Unsupported sub-agent: {sub_agent_name}")
+            return {"success": False, "error": f"Unsupported sub-agent: {sub_agent_name}", "raw": data}
 
+
+
+        # Call the selected sub-agent
         try:
-            sub_result = await agent_entry["handler"](session_id, user_input=user_input)
-            logger.debug(f"[MASTER_AGENT] Raw sub-agent result: {sub_result}")
-        except Exception as e:
-            logger.exception(f"[MASTER_AGENT] Error in sub-agent '{sub_agent_name}'")
-            return {
-                "output": f"Error in {sub_agent_name}: {str(e)}",
-                "success": False,
-                "session_id": session_id
-            }
+            sub_result = await agent_entry["handler"](session_id,user_input=user_input)
+            logger.debug(f"[SUPER AGENT] RAW sub-agent result: {sub_result}")
 
+        except Exception as e:
+            logger.exception(f"[SUPER AGENT] Error in sub-agent '{sub_agent_name}'")
+            return {"output": f"Error in {sub_agent_name}: {str(e)}",
+                    "success": False,
+                    "session_id": session_id}
+        
         # Extract final output 
         output_val = sub_result.get("output", "")
         if isinstance(output_val, str):
@@ -276,16 +184,14 @@ async def master(user_input: str, session_id: str):
                 pass
 
         return {
-            "output": output_val,
-            "success": sub_result.get("success", False),
-            "session_id": sub_result.get("session_id", session_id)
-        }
+                "output": output_val,
+                "success": sub_result.get("success", False),
+                "session_id": sub_result.get("session_id", session_id)}
 
     except Exception as e:
-        logger.exception("[MASTER_AGENT] Unexpected error")
-        return {
-            "output": f"Unexpected error in master agent: {str(e)}",
-            "success": False,
-            "session_id": session_id
-        }
 
+        logger.exception("[SUPER AGENT] Unexpected error")
+        return {
+                "output": f"Unexpected error in master agent: {str(e)}",
+                "success": False,
+                "session_id": session_id}

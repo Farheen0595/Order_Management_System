@@ -1,497 +1,309 @@
 # app/agents/order_placement_agent.py
+
 import json
+import re
+import logging
+from tenacity import retry, stop_after_attempt, wait_fixed
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.agents import create_tool_calling_agent, AgentExecutor
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_community.utilities import SQLDatabase
 from langchain_community.agent_toolkits import SQLDatabaseToolkit
+import ast
 from app.agents.memory import get_by_session_id
 from app.config.settings import settings
 from app.tools.order_placement_tools import OrderPlacementTool
-from tenacity import retry, stop_after_attempt, wait_fixed
 from app.config.loggings import setup_logging
-from app.config.settings import settings
-import logging
+from app.config.constants import constants
 
 
 setup_logging(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
-# ---------- JSON cleaner ----------
-def clean_json_output(output: str) -> str:
-    if not isinstance(output, str):
-        return str(output)
-    out = output.strip()
-    if out.startswith("```"):
-        out = out.strip("`")
-        if out.lower().startswith("json"):
-            out = out[4:].strip()
-    if out.endswith("```"):
-        out = out[:-3].strip()
-    return out
-
-
-
 def create_order_placement_agent(session_id: str):
-    
+    """Create an order placement agent with SQL + Order tools."""
 
-    logger.debug(f"Entered into the [ORDER PLACEMNET AGENT FUNCTION] - with the session id - {session_id}")
+    logger.info(f"Creating order placement agent for session: {session_id}")
 
-    # creating the instance of the LLM
-    logger.debug(f"Creating the instance of the model LLM {settings.DEFAULT_MODEL}")
+    # Initialize LLM
+    llm = ChatGoogleGenerativeAI(
+        model=constants.DEFAULT_MODEL,
+        api_key=settings.GEMINI_API_KEY,
+        max_tokens=2000,
+        temperature=0
+    )
 
-    llm = ChatGoogleGenerativeAI(model=settings.DEFAULT_MODEL,
-                                 api_key=settings.GEMINI_API_KEY,
-                                 max_tokens=2000,
-                                 temperature=0)
-
-
-    
+    # Initialize Database tools
     db_url = f"mysql+pymysql://{settings.DB_USERNAME}:{settings.DB_PASSWORD}@{settings.DB_HOSTNAME}:{settings.DB_PORT}/{settings.DB_NAME}"
-    logger.debug(f"Creating URL to connect to the MYSQL DataBasd - {db_url}")
-
     try:
-        
-        # creating the instance of the db object
-        logger.debug("Created the instance of the Database")
         db = SQLDatabase.from_uri(db_url)
-
-        logger.debug("Storing the SQL tools in the sql_tools")
         sql_tools = SQLDatabaseToolkit(db=db, llm=llm).get_tools()
-
-        logger.debug(f"SQL Tool Kit List - {sql_tools} and length of it {len(sql_tools)}")
-
-
+        logger.info(f"SQL toolkit initialized with {len(sql_tools)} tools")
     except Exception as e:
-        
-        logger.debug(f"SQL connection failed: {e}")
+        logger.error(f"Database connection failed: {str(e)}", exc_info=True)
         sql_tools = []
 
-    logger.debug(f"Combining the SQL Tool and Order Placement Tool")
-    logger.debug(f"Adding the session id to the order placemnet tool")
+    # Order tool
     placement_tool = OrderPlacementTool(session_token=session_id)
-
     tools = sql_tools + [placement_tool]
 
-    logger.setLevel(level=logging.INFO)
-    logger.info("Setting the instruction block")
+    # ---------- Simplified Instructions ----------
 
 
-    instructions = """
+    instructions ="""
+You are an intelligent Order Placement Agent.
 
-You are an Order Placement Agent 
-
-Your main responsibilities:  
-1. Search inventory using SQL Toolkit.  
-2. Place orders using OrderPlacementTool.  
-
----
-
-### 1. Product Search Workflow
-
-- The mandatory sequence is:
-  1) Run sql_db_query_checker  
-  2) Then run sql_db_query with the validated query  
-  3) Interpret the results and return JSON  
-
-- ❌ Do NOT stop after sql_db_query_checker alone.  
-- ❌ Do NOT return SQL text as final output.  
-- ✅ Always return JSON based on sql_db_query results.  
-
-- Always use **both** `sql_db_query_checker` and then `sql_db_query` to search the `Inventory` table where `status='active'`.
-- ⚠️ Never stop after validation — the mandatory sequence is:
-
-  validate query → execute query → interpret results → produce JSON output.
-
-- ⚠️ Even if the query looks ambiguous (e.g., "last product", "that one"), you must still run **sql_db_query** after validation.  
-
-- **Do not reuse previous queries**. Build a fresh SQL query for the current user input only.
-
-- Extract **brand** and **product keywords** from user input.
-
-- SQL query strategy:
-
-  - If brand + product keywords present:
-
-    SELECT sku, product_name, brand, price, quantity_available
-    FROM Inventory
-    WHERE status='active'
-      AND brand LIKE '%<brand>%'
-      AND product_name LIKE '%<keywords>%';
-
-  - If brand missing:
-    SELECT sku, product_name, brand, price, quantity_available
-    FROM Inventory
-    WHERE status='active'
-      AND (product_name LIKE '%<keywords>%'
-           OR CONCAT(brand, ' ', product_name) LIKE '%<keywords>%');
-
-  - Fallback (if no match):
-    SELECT sku, product_name, brand, price, quantity_available
-    FROM Inventory
-    WHERE status='active'
-      AND (brand LIKE '%<any_keyword>%' OR product_name LIKE '%<any_keyword>%');
-
-- For multi-word queries, split keywords and apply **AND conditions**:
-  e.g., product_name LIKE '%wireless%' AND product_name LIKE '%bluetooth%' AND product_name LIKE '%headphones%'
+Your responsibilities:
+1. Search the 'Inventory' table using SQL tools.
+2. Manage shopping cart using OrderPlacementTool.
+3. Place orders for users and generate order numbers.
+4. Always return results as valid JSON with **one key**: "output".
+5. Never return Python objects, tuples, or raw SQL.
+6. Always provide **human-readable summaries**.
 
 ---
-### 🔄 1.1 Handling Multiple Product Queries
 
-- When the user mentions **multiple products** in one input (e.g., “Add Smartphone X15 and Robot Vacuum Cleaner”):
+### Product Search
 
-  - You must extract **each product name separately** (split by “and”, commas, or sentence breaks).
+- SQL query format:
+  SELECT sku, product_name, brand, price, quantity_available
+  FROM Inventory
+  WHERE status='active'
+    AND (brand LIKE '%<brand>%' OR product_name LIKE '%<keywords>%');
+
+- SQL results appear like:
+
+  [("COMP-3002", "Mechanical Keyboard RGB", "Logitech", 129.99, 30)]
   
-  - For **each product name**, repeat the full SQL search workflow:
-      1. Run `sql_db_query_checker`
-      2. Then run `sql_db_query`
-      3. Interpret and return JSON for each result.
+- Convert into human-readable JSON:
 
-  - Do **not stop after the first match**.
-  - Return combined JSON summaries for all matched products in this format:
+  {{
+    "output": "✅ Product Found: SKU COMP-3002 , Name: Mechanical Keyboard RGB , Brand: Logitech , Price: 129.99 , Quantity Available: 30"
+  }}
 
-    ```json
-    {{
-      "output": "✅ Product 1 found: Smartphone X15 by Apple . Price: $999.00. ✅ Product 2 found: Robot Vacuum Cleaner by iRobot . Price: $349.00."
-    }}
-    ```
+- If multiple products, list each separated by periods.
 
-- If one of the products is not found, still include others in the same response:
-
-    ```json
-    {{
-      "output": "✅ Product found: Smartphone X15 by Apple . Price: $999.00. ❌ Product not found: Robot Mop Pro."
-    }}
-    ```
-
-- Always ensure you:
-  - Execute **both SQL tools** (`sql_db_query_checker` → `sql_db_query`) for *each* product.
-  - Never merge them into one SQL query for multiple names.
-  - Never output plain SQL — only JSON summaries.
-  - Maintain the final `{{ "output": "..." }}` format, combining multiple product results clearly.
-
----
-### 2. POST-SQL RESULT HANDLING (MANDATORY)
-   After every SQL query (checker + execution):
-
-   1. Always inspect the returned rows.
-
-   2. Determine availability:
-
-    - If rows found and quantity_available > 0:
-        {{"output": "✅ Product found: <product_name> by <brand> (SKU: <sku>). Price: $<price>. Available for order."}}
-
-    - If rows found but quantity_available == 0:
-        {{"output": "⚠️ Product out of stock: <product_name> by <brand>. Price: $<price>."}}
-
-    - If no rows:
-        {{"output": "❌ Product not found. Please check the product name."}}
-
-   3. **Always** return a JSON with a single key "output".
-
-   4. **Do not proceed or wait** — produce this output even if the product is out of stock.
-
-   5. Never leave "output" empty.
-
-   6. Never output Python code, function calls, or raw SQL.
-
-   7. ⚠️ After every chain (checker + execution), a JSON with "output" is mandatory.
+- If no record is found:
+  {{
+    "output": "❌ Product not found."
+  }}
 
 ---
 
+### Cart Management (OrderPlacementTool)
 
-### 3. Order Placement Workflow (STRICT)
+- Always take SKU and quantity from SQL result.Don't generate your OWN 
 
-If the user says **"I want to order this product"** or **"order this"**  or **any query related to the order placing** after a product search:  
+#### Add to Cart
+- Use action: "add_to_cart" with `sku` and `quantity`.
+- Validate SKU exists and stock is available.
+- Return JSON summary:
+  {{
+    "output": "Added 2 Smart LED TV 55' to your cart. Cart now has: Smart LED TV 55' x 2 = $1199.98"
+  }}
 
-1. **Confirm intent**  
-   - Always ask:  
-     {{"output": "Shall I add this product to your cart?"}}  
+#### Remove from Cart
+- Use action: "remove_from_cart" with `sku` and `quantity`.
+- Update reserved quantity.
+- Return JSON summary:
+  {{
+    "output": "Removed 1 Smart LED TV 55' from your cart. Cart now has: Smart LED TV 55' x 1 = $599.99"
+  }}
 
-   - Never add to cart without explicit confirmation.  
-
-2. **Ask for quantity**  
-
-   - If user confirms, ask:  
-     {{"output": "What quantity would you like to order?"}}  
-
-   - Default to 1 if no quantity is specified.  
-
-   - If requested quantity > `quantity_available`:  
-
-     {{"output": "⚠️ Cannot place order. Only <quantity_available> left in stock."}}  
-
-3. **Add to Cart (via OrderPlacementTool)**  
-
-   - Call programmatically:  
-
-     {{"action": "add_to_cart", "sku": "<sku>", "quantity": <n>}}  
-
-   - This **reserves stock**:  
-
-     - Increments `reserved_quantity`  
-     - Leaves `quantity_available` unchanged  
-     
-   - Logs `"CART_ADD"` in **InventoryAudit**.  
-
-   - **After the tool responds, ALWAYS re-wrap the tool's response into JSON under "output"**.  
-
-   - Example:  
-     {{"output": "✅ Added 2 Smart LED TV 55\" by Samsung (SKU: ELEC-1001) to your cart. Do you want to proceed to checkout?"}}  
-
-4. **View Cart (optional)**  
-
-   - If user asks → run:  
-
-     {{"action": "view_cart"}}  
-
-   - **Always re-wrap the tool’s response under "output"**.  
-
-
-5. **Checkout Confirmation**  
-
-   - If user says "yes, checkout" or "place my order", ask:  
-
-     {{"output": "Shall I place your order now?"}}  
-
-   - On confirmation, call:  
-
-     {{"action": "checkout"}}  
-
-   - Checkout logic:  
-
-     - Deduct purchased qty from `quantity_available`  
-     - Release the same qty from `reserved_quantity`  
-     - Insert into `Orders` table with status `"PLACED"`  
-     - Add `OrderAudit` entry: `"PENDING" → "PLACED"`  
-     - Clear cart  
-
-   - On success:  
-     {{"output": "✅ Your order (ID: ORD-1234ABCD) for Smart LED TV 55\" (2 items) has been placed successfully. A confirmation email has been sent to aiagent_05@gmail.com. Total price: $1199.98."}}  
-
-   - On failure (empty cart):  
-     {{"output": "❌ Your cart is empty. Cannot place an order."}}  
-
-   - On stock loss during checkout:  
-     {{"output": "⚠️ Unable to place order. Stock for Smart LED TV 55\" is no longer available."}}  
+#### View Cart
+- Use action: "view_cart" to display cart contents.
+- Include items, quantities, subtotal, total, and optional prompt to checkout.
+- Example:
+  {{
+    "output": "Cart items:\n- Smart LED TV 55' x 2 = $1199.98\nTotal: $1199.98\nDo you want to checkout?"
+  }}
 
 ---
 
-#### Tool Input Schema (MANDATORY)
+### Checkout / Place Order
 
-`OrderPlacementTool` accepts JSON:  
-
-- `action`: "add_to_cart", "remove_from_cart", "view_cart", "checkout"  
-
-- `sku`: string, **must exactly match SKU from Inventory SQL result**  
-
-  ⚠️ Never fabricate or guess SKUs  
-- `quantity`: integer, required only for "add_to_cart" and "remove_from_cart"  
-
-Examples:  
-- {{"action": "add_to_cart", "sku": "ELEC-1001", "quantity": 2}}  
-- {{"action": "remove_from_cart", "sku": "BOOK-5001", "quantity": 1}}  
-- {{"action": "view_cart"}}  
-- {{"action": "checkout"}}  
-
----
-
-#### Conversation Rules
-
-- Always follow this sequence:  
-
-  Product Search → Confirm Intent → Ask Quantity → Add to Cart → Confirm Checkout → Place Order.  
-- Do not skip steps.  
-- Do not expose tool calls or raw SQL to the user.  
-- **After every tool call, always re-wrap the response under {{"output": "..."}}**.  
-- Always wrap responses as:  
-  {{"output": "..."}}  
-- Never leave "output" empty.  
-- Be polite, clear, and professional.  
+- Use action: "checkout".
+- Validate:
+  - Cart is not empty
+  - All items have reserved quantities
+  - Enough stock exists
+- Generate unique order number: ORD-XXXXXXXX
+- Deduct inventory quantities and release reserved amounts
+- Save records in Orders, InventoryAudit, and OrderAudit
+- Ask email of the user before placing the order don't generate random email
+- Send confirmation email to the user's email ID (if available)
+- Return human-readable summary in JSON:
+  {{
+    "output": "Your order (ORD-1A2B3C4D) has been placed successfully.\nItems:\n- Smart LED TV 55' (2 @ $599.99)\nTotal: $1199.98\n✅ Confirmation email sent to user@example.com"
+  }}
 
 ---
 
-### 4. Tool Output Handling
+### Error Handling
 
-- Do not expose raw SQL or tool JSON directly to the user.
+- If action fails (invalid SKU, out of stock, empty cart checkout), return a clear message:
+  {{
+    "output": "❌ Unable to add Smart LED TV 55' to your cart: only 0 units available."
+  }}
 
-- Always interpret results into clear, human-readable messages.
-
-
-- Always wrap final responses in JSON with the "output" key.
-
-- **After any tool call (add_to_cart, remove_from_cart, view_cart, checkout) → ALWAYS re-wrap the tool’s response into {{"output": "..."}} and stop. Never leave output empty.**
+- Combine multiple errors in a readable sentence separated by periods.
 
 ---
 
-### 5. Example Queries
+### Mandatory Workflow Sequence
 
-- "Does Samsung Smart LED TV exist?"  
-- "Show me all Apple products"  
-- "Order 1 Apple Smartphone X15 for john@email.com"  
-- "Order 2 Samsung Smart LED TVs for mary@samsung.com"  
-- "Order 2 Wireless Bluetooth Headphones for mary@samsung.com"  
-- "Order 2 wireless headphones" → should match `Wireless Bluetooth Headphones`  
-- "Add Smartphone X15 and Robot Vacuum Cleaner to my cart" → should trigger multi-product workflow  
-
----
-
-### 6. Final Rules
-- Be polite, professional, and clear.
-- Use emojis for readability.
-- Always wrap responses in:
-  {{"output": "..."}}
-- Never confirm an order unless `OrderPlacementTool` succeeds.
-- Always handle dynamic fields (order_id, product_name, quantity, price, total_price, customer_email, etc.).
+1. Run SQL search → validate results → return JSON.
+2. Add items to cart → return cart summary → JSON.
+3. Remove items (optional) → return cart summary → JSON.
+4. Checkout → generate order → save audits → send confirmation email → return order summary → JSON.
+5. Always handle errors gracefully → JSON output only.
+6. If the user asks about adding another product same steps has to follow 
+   example : If user says i want to order data science handboo and air purifier or if the user sayd i want to add another product make sure above 1 to 5 repeat trigger the OrderManagement tool add 
+            to cart,show cart should happen never show the output without triggering the tools it handle multiple or sequence order products adding before checkout
 
 ---
 
-### 7. Mandatory Final Answer
-- After every chain (SQL validation + SQL execution + tool usage), **always produce a final response**.  
-- The final response MUST be valid JSON with a single key "output".  
-- Do not stop after showing SQL or raw rows.  
-- Convert query results into a **human-readable summary** under "output".  
+### Output Rules
 
-Examples:
-
-- Rows found, quantity > 0:  
-
-  {{"output": "✅ Product found: Smart LED TV 55\" by Samsung (SKU: ELEC-1001). Price: $599.99. Available for order."}}
-
-- Rows found, quantity == 0:  
-
-  {{"output": "⚠️ Product out of stock: Smart LED TV 55\" by Samsung. Price: $599.99."}}
-
-- No rows:  
-  {{"output": "❌ Product not found. Please check the product name."}}
-
-⚠️ **Never leave "output" empty.**
-
-⚠️ **Never output Python function calls or raw code. Only JSON.**
-
+- Always return JSON with a single "output" key.
+- Never include Python objects, tuples, or raw SQL.
+- Output must be **human-readable** and **actionable** for the user.
+- Never break JSON formatting (no unterminated strings, no extra characters).
 
 ---
 
-### 8. Fallback & Safety (MANDATORY)
+### Example Combined Flow
 
-- You must **never** expose chat history, intermediate steps, or internal reasoning to the user.
-
-- If for any reason you cannot produce a valid "output" (for example, after `sql_db_query_checker` but before `sql_db_query`, or due to tool errors):
-
-    ```json
-    {{"output": "⚠️ Unable to complete your request at the moment. Please try again shortly."}}
-    ```
-
-- Always ensure the final message to the user has **exactly one key `"output"`**.
-- Never show internal state, SQL queries, debug messages, or reasoning traces.
-- If a query validation (`sql_db_query_checker`) passes but no SQL results are executed or returned,
-  you must **still run `sql_db_query`** or respond with the fallback JSON above.
-- Do not print or expose `chat_history` even if empty output occurs.
-- Be polite, concise, and never repeat system text.
+{{
+  "output": "✅ Product Found: SKU ELEC-100, Name: Smart LED TV 55' ,Brand: Samsung, Price: 599.99 , Quantity Available: 25 .Do you wanna add to the cart ?"
+}}
+→ Add to cart →  
+{{
+  "output": "Added 2 Smart LED TV 55' to your cart. Cart now has: Smart LED TV 55' x 2 = $1199.98"
+}}
+→ View cart →  
+{{
+  "output": "Cart items:\n- Smart LED TV 55' x 2 = $1199.98\nTotal: $1199.98\nDo you want to checkout?"
+}}
+→ Checkout →  
+{{
+  "output": "Your order (ORD-1A2B3C4D) has been placed successfully.\nItems:\n- Smart LED TV 55' (2 @ $599.99)\nTotal: $1199.98\n✅ Confirmation email sent to user@example.com"
+}}
 
 """
 
-    logger.setLevel(level=logging.DEBUG)
-    logger.debug("Creating a prompt Structure by combinig system instructions, chat history, human input, placeholder ")
     prompt = ChatPromptTemplate.from_messages([
-                                              ("system", instructions),
-                                              MessagesPlaceholder(variable_name="chat_history"),
-                                              ("human", "{input}"),
-                                              ("placeholder", "{agent_scratchpad}")
-                                              ])
+        ("system", instructions),
+        MessagesPlaceholder(variable_name="chat_history"),
+        ("human", "{input}"),
+        ("placeholder", "{agent_scratchpad}")
+    ])
+    logger.debug(f"[{session_id}] Prompt created successfully")
 
-    logger.debug("creating the agent RUNNABLE")
     agent = create_tool_calling_agent(llm=llm, tools=tools, prompt=prompt)
+    logger.debug(f"[{session_id}] Agent created with {len(tools)} tools")
 
+    executor = AgentExecutor(
+        agent=agent,
+        tools=tools,
+        verbose=True,
+        handle_parsing_errors=True,
+        max_iterations=18,
+        return_intermediate_steps=True,
+    )
 
-    logger.debug("creating the Agent Executor")
+    logger.debug(f"[{session_id}] AgentExecutor ready (max_iterations=8)")
 
-    executor = AgentExecutor(agent=agent,
-                            tools=tools,
-                            verbose=True,
-                            handle_parsing_errors=True,
-                            max_iterations=12,
-                            return_intermediate_steps=True,)
+    agent_with_memory = RunnableWithMessageHistory(
+        runnable=executor,
+        get_session_history=get_by_session_id,
+        input_messages_key="input",
+        history_messages_key="chat_history",
+    )
 
-    logger.debug("Creating the Agent with memory")
-    agent_with_memory = RunnableWithMessageHistory(runnable=executor,
-                                                  get_session_history=get_by_session_id,
-                                                  input_messages_key="input",
-                                                  history_messages_key="chat_history",
-                                                    )
-
-    logger.debug("Combined Order Placement Agent created successfully!")
-
+    logger.info(f"[{session_id}] Agent with memory wrapper created")
     return agent_with_memory
 
 
+# ----------------------------------------------------------------------
+# Utility: Output Extractor
+# ----------------------------------------------------------------------
+def extract_output_string(raw_output: str) -> str:
+    """
+    Extracts only the string inside the "output" key from raw LLM output.
+    Works even if JSON is invalid due to unescaped quotes.
+    """
+    if not raw_output:
+        logger.warning("Empty raw output received from LLM.")
+        return ""
+
+    cleaned = re.sub(r"^```(?:json)?\n|```$", "", raw_output.strip())
+
+    match = re.search(r'"output"\s*:\s*"(.*)"', cleaned, re.DOTALL)
+    if match:
+        value = match.group(1).replace('\\"', '"')
+        return value
+
+    logger.warning("Could not find 'output' key in LLM response; returning raw cleaned text.")
+    return cleaned
 
 
+# ----------------------------------------------------------------------
+# Main Async Order Handler
+# ----------------------------------------------------------------------
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
-async def handle_order_placement(session_id: str, 
-                                 user_input: str):
-
-
-    print(f"\n Order Placement Agent Processing:  '{user_input}'")
-
-    print("=" * 60)
+async def handle_order_placement(session_id: str, user_input: str):
+    """
+    Main handler for order placement.
+    Logs all intermediate reasoning, tool usage, and observations.
+    """
+    logger.info(f"[{session_id}] 🔹 Starting order placement for input: {user_input[:100]}")
 
     try:
-        logger.debug("Creating the agent with memory object")
+        # Step 1: Agent creation
         agent = create_order_placement_agent(session_id=session_id)
 
+        # Step 2: LLM Invocation
+        logger.info(f"[{session_id}] 🔸 Invoking agent...")
+        result = await agent.ainvoke(
+            {"input": user_input},
+            config={"configurable": {"session_id": session_id}}
+        )
 
-        logger.debug("Invoking the Runnable with message history : (query)%s (session_id)%s",user_input,session_id)
-
-        result = await agent.ainvoke({"input": user_input},
-                                      config={"configurable": {"session_id": session_id}}
-                                      )
-
-        print("\n ================Printing the result=============")
-        print(result)
-
-        print("\n==================TYPE OF THE RESULT=====================")
-        print(type(result))
-
-        # print("\n===================OUTPUT=================================")
-        # print(result["output"])
-
-        # Extract safest text
-        if isinstance(result, dict):
-            output_raw = result.get("output") or result.get("text") or str(result)
+        # Step 3: Log intermediate reasoning steps
+        intermediate_steps = result.get("intermediate_steps", [])
+        if intermediate_steps:
+            logger.info(f"[{session_id}] Agent completed {len(intermediate_steps)} intermediate steps:")
+            for i, (action, observation) in enumerate(intermediate_steps, start=1):
+                action_type = getattr(action, "tool", "UnknownTool")
+                action_input = getattr(action, "tool_input", "")
+                logger.info(f"   Step {i}:  Tool → {action_type}")
+                logger.debug(f"  Tool Input: {action_input}")
+                logger.info(f"  Observation: {observation}")
         else:
-            output_raw = str(result)
+            logger.info(f"[{session_id}]  No intermediate steps were returned by the agent.")
 
-        print("\n=================PARSED OUTPUT=======================")
-        print(output_raw)
-        steps = result.get("intermediate_steps", [])
+        # Step 4: Extract output
+        raw_output = result.get("output", "")
+        final_output = extract_output_string(raw_output)
+        if not final_output.strip():
+            final_output = "No output returned by agent."
+            logger.warning(f"[{session_id}] Empty output received after extraction.")
 
-        # Print intermediate steps
-        print("\n===== 🛠️ Intermediate Steps =====")
-        for i, step in enumerate(steps, start=1):
-            action, observation = step
-            print(f"\nStep {i}:")
-            print(f"  🔹 Action: {action}")
-            print(f"  🔹 Observation: {observation}")
+        logger.info(f"[{session_id}]  Final Agent Output: {final_output[:250]}")
 
-        print("\n===== ✅ Final Output =====")
-        print("================= 🟢 DEBUG END =================\n")
-
-        # Normalize code-fence JSON →dict
-        try:
-            cleaned = clean_json_output(output_raw)
-            parsed = json.loads(cleaned)
-        except Exception:
-            parsed = {"output": str(output_raw)}
-
-        # Fallback
-        if not parsed or "output" not in parsed:
-            return {"output": "Please check the query or try again.", "success": False, "session_id": session_id}
-
-        return {"output": parsed["output"], "success": True, "session_id": session_id}
+        return {
+            "output": final_output,
+            "success": True,
+            "session_id": session_id
+        }
 
     except Exception as e:
-        print(f"Exception in handle_order_placement: {str(e)}")
-        return {"output": f"Error in Order Placement Agent: {str(e)}", "success": False, "session_id": session_id}
+        logger.error(f"[{session_id}]  Error in handle_order_placement: {str(e)}", exc_info=True)
+        return {
+            "output": f"Error during processing: {str(e)}",
+            "success": False,
+            "session_id": session_id
+        }

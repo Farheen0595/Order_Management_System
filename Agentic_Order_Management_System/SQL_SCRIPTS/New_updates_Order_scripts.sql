@@ -136,13 +136,29 @@ SET FOREIGN_KEY_CHECKS = 1;
 
 
 
+SELECT sku, product_name, brand, price, quantity_available FROM Inventory WHERE status='active' AND product_name LIKE '%datascience handbook%';
 
 
+SELECT sku, product_name, brand, price, quantity_available
+FROM Inventory
+WHERE status = 'active'
+  AND (
+    LOWER(product_name) LIKE LOWER('%Gaming Laptop G15%')
+    OR LOWER(REPLACE(product_name, ' ', '')) LIKE LOWER('%gaminglaptopg15%')
+    OR LOWER(brand) LIKE LOWER('%Gaming Laptop G15%')
+    OR LOWER(CONCAT(brand, ' ', product_name)) LIKE LOWER('%Gaming Laptop G15%')
+  );
 
 
+SELECT sku, product_name, brand, price, quantity_available
+FROM Inventory
+WHERE status = 'active' AND product_name LIKE '%Mechanical Keyboard RGB%' AND brand LIKE '%Logitech%';
 
+SELECT sku, product_name, brand, price, quantity_available FROM Inventory WHERE status='active' AND product_name LIKE '%Men\'s Running Shoes%';
 
+SELECT sku, product_name, brand, price, quantity_available FROM Inventory WHERE status='active' AND product_name LIKE '%Data Science Handbook%';
 
+SELECT sku, product_name, brand, price, quantity_available FROM Inventory WHERE product_name = 'Men\'s Running Shoes' AND status='active';
 
-
+SELECT sku, product_name, brand, price, quantity_available FROM Inventory WHERE product_name LIKE '%data science handbook%' AND status='active';
 

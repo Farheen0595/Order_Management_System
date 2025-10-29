@@ -14,11 +14,13 @@ async def main():
     query = "smart tv with Wi-Fi"
     collection_name = "product-inquiry"   # must match your PDF stem name (without .pdf)
 
-    results = await retriever.search(collection_name, query, k=3)
+    res = await retriever.fetch_by_product_names(collection_name, ["iPhone 15", "MacBook Air"])
+    print(json.loads(res)["output"])
 
-    
+    results = await retriever.search(collection_name, query, k=1)
 
     final_result = json.loads(results)
+    
     print("\n🔎 Query:", query)
     print("\n Results:",final_result["output"])
     print("📌 Top Results:")

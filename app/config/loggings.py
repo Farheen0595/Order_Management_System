@@ -2,65 +2,66 @@ import logging
 import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from app.config.settings import settings
+from app.config.constants import constants
 
+_logger_initialized = False
 
 class AppOnlyFilter(logging.Filter):
-    """Allow only logs from the 'app' package."""
     def filter(self, record):
         return record.name.startswith("app")
 
+def setup_logging(level=logging.DEBUG,
+                  log_dir=constants.LOG_DIRECTORY,
+                  log_file_name=constants.LOG_FILE_NAME,
+                  filter_app_only=True):
+    global _logger_initialized
+    if _logger_initialized:
+        return logging.getLogger()
+    _logger_initialized = True
 
-def setup_logging(
-    level: int,
-    log_dir: str = settings.LOG_DIRECTORY,
-    log_file_name: str = settings.LOG_FILE_NAME,
-    filter_app_only: bool = False  # New parameter to control filtering
-):
     # Ensure log directory exists
     log_path = Path(log_dir)
     log_path.mkdir(parents=True, exist_ok=True)
     log_path_file = log_path / log_file_name
 
-    # Formatter
-    fmt = "[%(asctime)s] [%(levelname)s] %(name)s: %(message)s"
-    formatter = logging.Formatter(fmt)
+    fmt = "[%(asctime)s] [PID:%(process)d] [%(levelname)s] [%(name)s:%(lineno)d] %(message)s"
+    formatter = logging.Formatter(fmt, datefmt="%Y-%m-%d %H:%M:%S")
 
-    # Console handler
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(level)
-    console_handler.setFormatter(formatter)
-    if filter_app_only:
-        console_handler.addFilter(AppOnlyFilter())
-
-    # Rotating file handler
-    file_handler = RotatingFileHandler(
-        log_path_file,
-        maxBytes=5_000_000,
-        backupCount=3,
-        encoding="utf-8"
-    )
-    file_handler.setLevel(level)
-    file_handler.setFormatter(formatter)
-    if filter_app_only:
-        file_handler.addFilter(AppOnlyFilter())
-
-    # Configure root logger
     root_logger = logging.getLogger()
-    root_logger.handlers.clear()
     root_logger.setLevel(level)
-    root_logger.addHandler(console_handler)
-    root_logger.addHandler(file_handler)
 
-    logging.getLogger("app").info(
-        f"Logging initialized. Level={logging.getLevelName(level)}, "
-        f"File={log_path_file}, Filter={filter_app_only}"
-    )
+    if not root_logger.hasHandlers():
+        # Console handler
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setLevel(level)
+        console_handler.setFormatter(formatter)
+        if filter_app_only:
+            console_handler.addFilter(AppOnlyFilter())
+        root_logger.addHandler(console_handler)
 
+        # File handler
+        file_handler = RotatingFileHandler(
+            log_path_file,
+            maxBytes=1_000_000,
+            backupCount=2,
+            encoding="utf-8"
+        )
+        file_handler.setLevel(level)
+        file_handler.setFormatter(formatter)
+        if filter_app_only:
+            file_handler.addFilter(AppOnlyFilter())
+        root_logger.addHandler(file_handler)
 
-# Example usage:
-# Log everything from all packages
-# setup_logging(level=logging.DEBUG)
+    # Suppress noisy third-party loggers
+    for logger_name in ['watchdog', 'urllib3', 'google', 'charset_normalizer', 'asyncio', 'aiosqlite']:
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
+        logging.getLogger(logger_name).propagate = False
 
-# Or log only from 'app' package (original behavior)
-# setup_logging(level=logging.DEBUG, filter_app_only=True)
+    # Startup message
+    app_logger = logging.getLogger("app")
+    app_logger.debug("Logging system initialized")
+    app_logger.info(f"Log level set to {logging.getLevelName(level)}")
+    app_logger.info(f"Log file: {log_path_file}")
+    app_logger.info(f"App-only filter: {filter_app_only}")
+
+    return root_logger

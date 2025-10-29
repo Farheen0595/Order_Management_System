@@ -1,27 +1,43 @@
-from typing import Type, Optional,List
+from typing import Type, Optional, List
 from langchain.tools import BaseTool
 from decimal import Decimal
-from pydantic import BaseModel
-from sqlalchemy import select, update, insert
+from pydantic import BaseModel, Field
+from sqlalchemy import select, update, insert, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
-import json
 import pytz
+import json
+import logging
+
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail
+
 from app.database.engine import AsyncSessionLocal
 from app.database.models import Orders, OrderAudit, Inventory, InventoryAudit
 from app.config.settings import settings
-from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Mail
+from app.config.loggings import setup_logging
+from app.config.constants import constants
 from app.schemas.order_cancellation_schema import OrderCancellationInput
 
+# --- Setup logging ---
+setup_logging(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
 SENDGRID_API_KEY = settings.SENDGRID_API_KEY
-
-
 IST = pytz.timezone("Asia/Kolkata")
 
 
-def send_cancellation_email(to_email: str, subject: str, body: str) -> None:
-    """Send order cancellation email using SendGrid."""
+# --------------------------
+# Utility Functions
+# --------------------------
+def json_struc(msg: str) -> str:
+    """Return a JSON structured message for consistent LLM response."""
+    return json.dumps({"output": msg})
+
+
+def send_cancellation_email(to_email: str, subject: str, body: str) -> bool:
+    """Send order cancellation email using SendGrid and return success flag."""
+    logger.info(f"Sending cancellation email to {to_email} for subject: {subject}")
     try:
         message = Mail(
             from_email="sdfarheen05@gmail.com",
@@ -31,134 +47,98 @@ def send_cancellation_email(to_email: str, subject: str, body: str) -> None:
         )
         sg = SendGridAPIClient(SENDGRID_API_KEY)
         sg.send(message)
-
+        logger.info(f"Cancellation email sent successfully to {to_email}")
+        return True
     except Exception as e:
-        print(f"[OrderCancellationTool] Email error: {e}")
+        logger.error(f"Failed to send cancellation email: {str(e)}", exc_info=True)
+        return False
 
 
-
+# --------------------------
+# Order Cancellation Tool
+# --------------------------
 class OrderCancellationTool(BaseTool):
-
     """
     Cancels an existing order, restores stock, writes InventoryAudit / OrderAudit,
     and notifies the customer via email.
 
-    IMPORTANT:
-    - Your Orders table holds **one row per SKU** for the same order_number.
-    - We cancel all *eligible* rows (status NOT in CANCELLED/SHIPPED/DELIVERED).
-    - Inventory logic mirrors your Placement flow:
-        * At checkout, you *already* reduced `quantity_available` and released `reserved`.
-        * On cancel, we revert: `quantity_available += ordered_quantity`. Reserved stays unchanged.
-    - InventoryAudit row must include all mandatory columns shown in your schema snapshot.
+    JSON-based output only. Messages are clear, emoji-friendly, and user-ready.
     """
 
     name: str = "OrderCancellationTool"
     description: str = (
-        "Cancels an existing order (one or more rows in Orders for the same order_number), "
-        "restores stock, updates audits, and emails the customer."
+        "Cancels an existing order, restores stock, updates audits, "
+        "and sends an email notification to the customer."
     )
+
     args_schema: Type[BaseModel] = OrderCancellationInput
+    session_token: str = Field(..., exclude=True, description="Bound session id; not exposed to LLM")
 
-
-
-    async def _arun(
-                    self,
-                    action: str,
-                    order_number: str,
-                    reason: Optional[str] = None)-> str:
-        
+    async def _arun(self, action: str, order_number: str, reason: Optional[str] = None) -> str:
+        """Async execution handler for order cancellation."""
+        logger.info(f"Processing action '{action}' for order: {order_number}")
 
         if action != "cancel_order":
-            return '{"output": "Invalid action. Only \'cancel_order\' is supported."}'
-
+            logger.warning(f"Invalid action attempted: {action}")
+            return json_struc("Invalid action. Only 'cancel_order' is supported.")
 
         async with AsyncSessionLocal() as db:
-
             try:
-
-                return await self._cancel_order(db, order_number, reason)
-            
+                result = await self._cancel_order(db, order_number, reason)
+                logger.info(f"Order cancellation completed for {order_number}")
+                return result
             except Exception as e:
                 await db.rollback()
-                print(f"[OrderCancellationTool] Error: {e}")
-                return '{"output": "Unable to process the cancellation at this time. Please try again later."}'
+                logger.error(f"Order cancellation failed: {str(e)}", exc_info=True)
+                return json_struc("Unable to process the cancellation at this time. Please try again later.")
 
 
+    async def _cancel_order(self, db: AsyncSession, order_number: str, reason: Optional[str]) -> str:
 
-    async def _cancel_order(
-                        self,
-                        db: AsyncSession,
-                        order_number: str,
-                        reason: Optional[str]) -> str:
+        logger.debug(f"Starting cancellation process for order {order_number}")
 
-
-        rows_result = await db.execute(select(Orders).where(Orders.order_number == order_number))
-
+        rows_result = await db.execute(
+            select(Orders).where(and_(Orders.order_number == order_number, Orders.session_id == self.session_token))
+        )
         order_rows: List[Orders] = rows_result.scalars().all()
 
         if not order_rows:
-            return f'{{"output": "Order Number {order_number} was not found."}}'
+            logger.warning(f"Order not found: {order_number}")
+            return json_struc(f"Order Number {order_number} was not found.")
 
-        # Identify eligibility
-        BLOCKED = {"CANCELLED", "DELIVERED", "SHIPPED"}\
-        
-        eligible: List[Orders] = [r for r in order_rows if (r.status or "").upper() not in BLOCKED]
-
-        ineligible: List[Orders] = [r for r in order_rows if (r.status or "").upper() in BLOCKED]
+        BLOCKED = {"CANCELLED"}
+        eligible = [r for r in order_rows if (r.status or "").upper() not in BLOCKED]
+        ineligible = [r for r in order_rows if (r.status or "").upper() in BLOCKED]
 
         if not eligible:
-
             statuses = ", ".join(sorted({(r.status or "").upper() for r in order_rows}))
+            return json_struc(f"Order {order_number} cannot be cancelled. Current status: {statuses}.")
 
-            return (f'{{"output": "Order {order_number} cannot be cancelled. '
-                            f'Current status: {statuses}."}}')
-
-
-        total_refund: Decimal = Decimal("0.00")
-        cancelled_summaries: List[str] = []
-
-
+        total_refund = Decimal("0.00")
+        cancelled_summaries = []
         now = datetime.now(IST)
-        default_email = getattr(settings, "DEFAULT_CUSTOMER_EMAIL", "dfarheen05@gmail.com")
+        default_email = getattr(constants, "DEFAULT_EMAIL_SENDER", "sdfarheen05@gmail.com")
 
+        logger.info(f"Processing cancellation for {len(eligible)} items")
 
         for row in eligible:
-
-            
-            row_total = Decimal(str(row.total_price or 0))
+            qty = int(row.quantity or 0)
+            row_total = Decimal(str(row.total_price))
             total_refund += row_total
 
-            #invent ory for this SKU
             inv_result = await db.execute(select(Inventory).where(Inventory.sku == row.sku))
+            inv = inv_result.scalar_one_or_none()
 
-            inv: Optional[Inventory] = inv_result.scalar_one_or_none()
+            if inv is not None:
+                prev_avail, prev_res = int(inv.quantity_available or 0), int(inv.reserved_quantity or 0)
+                new_avail, new_res = prev_avail + qty, prev_res
 
-            if inv is None:
-
-                print(f"[OrderCancellationTool] SKU {row.sku} not found in Inventory during cancel.")
-
-                prev_avail = new_avail = prev_res = new_res = 0
-
-            else:
-
-
-                prev_avail = int(inv.quantity_available or 0)
-                prev_res = int(inv.reserved_quantity or 0)
-
-                qty = int(row.quantity or 0)
-                new_avail = prev_avail + qty
-                new_res = prev_res  
-
-
-                # inventory change
                 await db.execute(
                     update(Inventory)
                     .where(Inventory.sku == row.sku)
                     .values(quantity_available=new_avail)
                 )
 
-
-                # InventoryAudit 
                 await db.execute(
                     insert(InventoryAudit).values(
                         sku=row.sku,
@@ -176,16 +156,13 @@ class OrderCancellationTool(BaseTool):
                     )
                 )
 
-
-            # Update this order row -> CANCELLED 
             old_status = (row.status or "").upper()
             row.status = "CANCELLED"
             row.remarks = f"Order cancelled. Reason: {reason or 'N/A'}"
 
-            # OrderAudit
             await db.execute(
                 insert(OrderAudit).values(
-                    order_id = row.id,
+                    order_id=row.id,
                     order_number=order_number,
                     sku=row.sku,
                     previous_status=old_status or "PLACED",
@@ -195,53 +172,44 @@ class OrderCancellationTool(BaseTool):
                 )
             )
 
-            cancelled_summaries.append(f"{row.sku} x {row.quantity}")
+            cancelled_summaries.append(f"{row.sku} x {qty}")
 
-        #  Persist everything
         await db.commit()
+        logger.info(f"Committed all DB changes for order {order_number}")
 
-        # Email notification
-        try:
-            pretty_refund = f"${total_refund:.2f}"
-            send_cancellation_email(
-                to_email=default_email,
-                subject=f"Order {order_number} Cancelled",
-                body=(
-                    f"Your order {order_number} has been cancelled successfully.<br>"
-                    f"Items: {', '.join(cancelled_summaries)}<br>"
-                    f"Refund Amount: {pretty_refund}"
-                ),
-            )
-
-        except Exception as e:
-            print(f"[OrderCancellationTool] Email send failed: {e}")
-
-
-        # 5) Build user-facing message
         pretty_refund = f"${total_refund:.2f}"
 
-        if ineligible:
-            # Partial cancellation
-            ineligible_statuses = ", ".join(sorted({(r.status or '').upper() for r in ineligible}))
-            return (
-                '{'
-                f'"output": " Partial cancel for Order {order_number}. '
-                f'Cancelled: {", ".join(cancelled_summaries)}. '
-                f'Not eligible (status: {ineligible_statuses}). '
-                f'Refund: {pretty_refund}."'
-                '}'
-            )
-
-        # cancellation
-        return (
-            '{'
-            f'"output": " Your order (Number: {order_number}) has been cancelled successfully. '
-            f'Items: {", ".join(cancelled_summaries)}. '
-            f'Total refund: {pretty_refund}."'
-            '}'
+        email_sent = send_cancellation_email(
+            to_email=default_email,
+            subject=f"Order {order_number} Cancelled",
+            body=(
+                f"Your order {order_number} has been cancelled successfully.<br>"
+                f"Items: {', '.join(cancelled_summaries)}<br>"
+                f"Refund Amount: {pretty_refund}"
+            ),
         )
 
-    
+        email_status = "Email sent successfully" if email_sent else "Email failed to send"
+
+        if ineligible:
+            ineligible_statuses = ", ".join(sorted({(r.status or '').upper() for r in ineligible}))
+            msg = (
+                    f"Partial cancellation for Order {order_number}.\n"
+                    f"Cancelled items: {', '.join(cancelled_summaries)}.\n"
+                    f"Not eligible (status: {ineligible_statuses}).\n"
+                    f"Refund: {pretty_refund}.\n"
+                    f"Email: {email_status} ({default_email})")
+        else:
+            msg = (
+                f"Your order (Number: {order_number}) has been fully cancelled.\n"
+                f"Items: {', '.join(cancelled_summaries)}.\n"
+                f"Refund: {pretty_refund}.\n"
+                f"Email: {email_status} ({default_email})"
+            )
+
+        logger.info(f"Final response for order {order_number}: {msg}")
+        return json_struc(msg)
 
     def _run(self, *args, **kwargs):
+        logger.warning("Synchronous run attempted but not supported.")
         raise NotImplementedError("This tool only supports async mode (_arun).")
